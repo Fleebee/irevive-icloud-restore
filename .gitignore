@@ -21,3 +21,6 @@ Thumbs.db
 
 # Updater private key
 .tauri-keys/irevive.key
+
+# Local files
+vupdate.txt
