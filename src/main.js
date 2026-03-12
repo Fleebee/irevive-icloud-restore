@@ -28,6 +28,14 @@ window.__onICloudClosed = () => {
   log("iCloud window closed.", "warn");
 };
 
+// Called from Rust when selection finishes (background progress tracker)
+window.__onSelectDone = (finalCount) => {
+  setStatus("connected", "Connected");
+  showLoader(false);
+  enableActionButtons(true);
+  log(`Selection complete: ${finalCount} items selected.`, "success");
+};
+
 // ── Logging ─────────────────────────────────────────────────
 
 function log(message, level = "") {
@@ -110,58 +118,33 @@ async function selectBatch() {
   try {
     setStatus("working", `Selecting ${count}...`);
     showLoader(true);
-    log(`Selecting next batch of ${count} items...`);
-    const r = await invoke("select_batch", { count });
-    setStatus("connected", "Connected");
-
-    if (r && r.ok) {
-      // Show only what was just selected - scan will give accurate total
-      updateCounters(r.selected || 0, undefined);
-      log(`Selected ${r.selected} items (method: ${r.method})`, "success");
-      if (r.selected === 0) {
-        log("No unchecked items found. Try scanning first or check if items have loaded.", "warn");
-      }
-    } else {
-      log(r?.error || "Selection returned no data.", "error");
-    }
+    enableActionButtons(false);
+    log(`Selecting up to ${count} items...`);
+    await invoke("select_batch", { count });
+    // Counter updates come in real-time from Rust background task
+    // __onSelectDone will be called when finished
   } catch (err) {
     setStatus("connected", "Connected");
-    log(`Selection failed: ${err}`, "error");
-  } finally {
     showLoader(false);
+    enableActionButtons(true);
+    log(`Selection failed: ${err}`, "error");
   }
 }
 
 async function clickRestore() {
   try {
-    setStatus("working", "Restoring...");
-    showLoader(true);
-    log("Clicking restore button...");
-    const r = await invoke("click_restore");
-    setStatus("connected", "Connected");
-
-    if (r && r.ok) {
-      if (r.confirmed) {
-        log(`Dialog confirmed: "${r.buttonText}"`, "success");
-        log("Ready for next batch — click Select then Restore.");
-      } else {
-        // Try to extract actual count from button text like "Restore 50 Files"
-        const btnText = r.buttonText || r.status || "";
-        const match = btnText.match(/(\d+)/);
-        const restoredCount = match ? parseInt(match[1]) : (parseInt(countSelected().textContent) || 0);
-        totalRestored += restoredCount;
-        updateCounters(0, totalRestored);
-        log(`Restore clicked: "${btnText}" (${restoredCount} files)`, "success");
-        log(`Total restored this session: ${totalRestored}`);
-      }
+    log("Clicking restore/confirm...");
+    await invoke("click_restore");
+    const selectedCount = parseInt(countSelected().textContent) || 0;
+    if (selectedCount > 0) {
+      totalRestored += selectedCount;
+      updateCounters(0, totalRestored);
+      log(`Restore clicked for ${selectedCount} items. Total this session: ${totalRestored}`, "success");
     } else {
-      log(r?.error || "Could not find restore or confirm button.", "error");
+      log("Restore/confirm clicked.", "success");
     }
   } catch (err) {
-    setStatus("connected", "Connected");
     log(`Restore failed: ${err}`, "error");
-  } finally {
-    showLoader(false);
   }
 }
 

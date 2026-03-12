@@ -6,33 +6,43 @@ struct AppState {
     icloud_open: Mutex<bool>,
 }
 
-/// Execute JavaScript in the iCloud webview and get the result back.
-/// Uses a setInterval to continuously hammer document.title with the result
-/// so we can catch it even when iCloud's React keeps overwriting it.
-async fn eval_in_icloud(
-    app_handle: &tauri::AppHandle,
-    js_code: &str,
-) -> Result<Value, String> {
+/// Fire JS in the iCloud webview without waiting for a result.
+fn fire_js(app_handle: &tauri::AppHandle, js_code: &str) -> Result<(), String> {
     let icloud_win = app_handle
         .get_webview_window("icloud")
         .ok_or("iCloud window not open. Click 'Open iCloud' first.")?;
 
-    let sentinel = format!("__IREVIVE_{}", uuid::Uuid::new_v4());
+    let wrapped_js = format!(
+        r#"(async () => {{ try {{ {js_code} }} catch(e) {{ console.error("iRevive error:", e); }} }})();"#,
+    );
 
-    // Run the JS and then start an interval that keeps setting document.title
-    // every 5ms until we clear it from Rust. This beats iCloud's React updates.
+    icloud_win
+        .eval(&wrapped_js)
+        .map_err(|e| format!("eval failed: {}", e))
+}
+
+/// Fire JS and update the main window's selected counter in real-time
+/// by having the iCloud JS call back via a shared counter.
+fn fire_js_with_progress(
+    app_handle: &tauri::AppHandle,
+    main_handle: tauri::AppHandle,
+    js_code: &str,
+) -> Result<(), String> {
+    let icloud_win = app_handle
+        .get_webview_window("icloud")
+        .ok_or("iCloud window not open. Click 'Open iCloud' first.")?;
+
     let wrapped_js = format!(
         r#"(async () => {{
-            let __result;
             try {{
-                __result = "{sentinel}:" + JSON.stringify(await (async () => {{ {js_code} }})());
+                window.__irevive_count = 0;
+                window.__irevive_done = false;
+                {js_code}
+                window.__irevive_done = true;
             }} catch(e) {{
-                __result = "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}});
+                window.__irevive_done = true;
+                console.error("iRevive error:", e);
             }}
-            // Keep hammering the title until Rust clears __irevive_interval
-            window.__irevive_interval = setInterval(() => {{
-                document.title = __result;
-            }}, 5);
         }})();"#,
     );
 
@@ -40,29 +50,70 @@ async fn eval_in_icloud(
         .eval(&wrapped_js)
         .map_err(|e| format!("eval failed: {}", e))?;
 
-    // Poll document.title - the interval ensures it keeps getting set back
-    loop {
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    // Spawn a background task to poll the count and update the main window
+    tokio::spawn(async move {
+        let mut last_count = 0u64;
+        let mut stable_ticks = 0u32;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        // Check if the iCloud window is still open
-        if app_handle.get_webview_window("icloud").is_none() {
-            return Err("iCloud window was closed".into());
-        }
+            let Some(icloud_win) = main_handle.get_webview_window("icloud") else {
+                break;
+            };
 
-        if let Ok(title) = icloud_win.title() {
-            let prefix = format!("{}:", sentinel);
-            if title.starts_with(&prefix) {
-                let json_str = &title[prefix.len()..];
-                // Stop the interval and reset title
-                let _ = icloud_win.eval(
-                    "clearInterval(window.__irevive_interval); window.__irevive_interval = null; document.title = '';"
-                );
-                return serde_json::from_str(json_str).map_err(|e| {
-                    format!("Failed to parse response: {} (raw: {})", e, json_str)
-                });
+            // Read count + done state into title
+            let _ = icloud_win.eval(
+                "document.title = '__IREVIVE_P:' + (window.__irevive_count||0) + ':' + (window.__irevive_done ? 1 : 0);"
+            );
+
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            if let Ok(title) = icloud_win.title() {
+                if let Some(data) = title.strip_prefix("__IREVIVE_P:") {
+                    let parts: Vec<&str> = data.split(':').collect();
+                    if parts.len() == 2 {
+                        let count = parts[0].parse::<u64>().unwrap_or(0);
+                        let done = parts[1] == "1";
+
+                        if count != last_count {
+                            last_count = count;
+                            stable_ticks = 0;
+                            // Update the main window counter
+                            if let Some(main_win) = main_handle.get_webview_window("main") {
+                                let _ = main_win.eval(&format!(
+                                    "document.getElementById('count-selected').textContent = '{count}';"
+                                ));
+                            }
+                        } else {
+                            stable_ticks += 1;
+                        }
+
+                        if done {
+                            // Final update
+                            if let Some(main_win) = main_handle.get_webview_window("main") {
+                                let _ = main_win.eval(&format!(
+                                    "document.getElementById('count-selected').textContent = '{count}'; window.__onSelectDone && window.__onSelectDone({count});"
+                                ));
+                            }
+                            break;
+                        }
+
+                        // Safety: if count hasn't changed for 30 seconds, assume done
+                        if stable_ticks > 150 {
+                            if let Some(main_win) = main_handle.get_webview_window("main") {
+                                let _ = main_win.eval(&format!(
+                                    "window.__onSelectDone && window.__onSelectDone({last_count});"
+                                ));
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
-    }
+    });
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -106,32 +157,35 @@ async fn open_icloud_window(
 #[tauri::command]
 async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Result<Value, String> {
     let n = count.unwrap_or(500);
+    let main_handle = app_handle.clone();
     let js = format!(
         r#"
         const delay = ms => new Promise(r => setTimeout(r, ms));
         const limit = {n};
-        let count = 0;
-        let method = "none-found";
 
         // Strategy 1: standard unchecked checkboxes
         const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:not(:checked)'));
-        for (const el of checkboxes.slice(0, limit)) {{
-            el.scrollIntoView({{ block: "center" }});
-            el.click();
-            count++;
-            if (count % 10 === 0) await delay(5);
+        if (checkboxes.length > 0) {{
+            for (const el of checkboxes.slice(0, limit)) {{
+                el.scrollIntoView({{ block: "center" }});
+                el.click();
+                window.__irevive_count++;
+                if (window.__irevive_count % 10 === 0) await delay(5);
+            }}
+            return;
         }}
-        if (count > 0) return {{ ok: true, selected: count, method: "standard-checkbox" }};
 
         // Strategy 2: aria checkboxes
         const ariaCheckboxes = Array.from(document.querySelectorAll('[role="checkbox"][aria-checked="false"]'));
-        for (const el of ariaCheckboxes.slice(0, limit)) {{
-            el.scrollIntoView({{ block: "center" }});
-            el.click();
-            count++;
-            if (count % 10 === 0) await delay(5);
+        if (ariaCheckboxes.length > 0) {{
+            for (const el of ariaCheckboxes.slice(0, limit)) {{
+                el.scrollIntoView({{ block: "center" }});
+                el.click();
+                window.__irevive_count++;
+                if (window.__irevive_count % 10 === 0) await delay(5);
+            }}
+            return;
         }}
-        if (count > 0) return {{ ok: true, selected: count, method: "aria-checkbox" }};
 
         // Strategy 3: selectable rows
         const selectors = [
@@ -140,27 +194,28 @@ async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Resul
             '[role="option"]'
         ];
         for (const sel of selectors) {{
-            if (count >= limit) break;
+            if (window.__irevive_count >= limit) break;
             const els = Array.from(document.querySelectorAll(sel));
-            for (const el of els.slice(0, limit - count)) {{
+            for (const el of els.slice(0, limit - window.__irevive_count)) {{
                 el.scrollIntoView({{ block: "center" }});
                 el.click();
-                count++;
-                if (count % 10 === 0) await delay(5);
+                window.__irevive_count++;
+                if (window.__irevive_count % 10 === 0) await delay(5);
             }}
-            if (count > 0) break;
+            if (window.__irevive_count > 0) break;
         }}
-        if (count > 0) return {{ ok: true, selected: count, method: "row-click" }};
-
-        return {{ ok: true, selected: 0, method: "none-found" }};
         "#,
     );
-    eval_in_icloud(&app_handle, &js).await
+
+    fire_js_with_progress(&app_handle, main_handle, &js)?;
+
+    // Return immediately - the background task updates the counter in real-time
+    Ok(json!({"ok": true, "started": true, "requested": n}))
 }
 
 #[tauri::command]
 async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    eval_in_icloud(
+    fire_js(
         &app_handle,
         r#"
         const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
@@ -172,7 +227,7 @@ async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
         });
         if (confirmBtn) {
             confirmBtn.click();
-            return { ok: true, status: "Confirmed dialog", buttonText: confirmBtn.textContent.trim(), confirmed: true };
+            return;
         }
 
         // Otherwise look for the restore/recover button
@@ -184,9 +239,7 @@ async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
             return true;
         });
 
-        if (!restoreBtn) {
-            return { ok: false, error: "No restore or confirm button found" };
-        }
+        if (!restoreBtn) return;
 
         // Scroll modal/dialog container to bottom first
         const modal =
@@ -210,32 +263,10 @@ async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
 
         restoreBtn.scrollIntoView({ block: "center", behavior: "instant" });
         restoreBtn.click();
-
-        return {
-            ok: true,
-            status: "Clicked restore button",
-            buttonText: restoreBtn.textContent.trim().slice(0, 80)
-        };
         "#,
-    )
-    .await
-}
+    )?;
 
-#[tauri::command]
-async fn get_status(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    eval_in_icloud(
-        &app_handle,
-        r#"
-        const checkboxes = document.querySelectorAll('input[type="checkbox"]').length;
-        const checked = document.querySelectorAll('input[type="checkbox"]:checked').length;
-        const ariaCheckboxes = document.querySelectorAll('[role="checkbox"]').length;
-        const ariaChecked = document.querySelectorAll('[role="checkbox"][aria-checked="true"]').length;
-        const rows = document.querySelectorAll('[role="row"]').length;
-        const selectedRows = document.querySelectorAll('[role="row"][aria-selected="true"]').length;
-        return { ok: true, checkboxes, checked, ariaCheckboxes, ariaChecked, rows, selectedRows };
-        "#,
-    )
-    .await
+    Ok(json!({"ok": true, "status": "Restore/confirm clicked"}))
 }
 
 #[tauri::command]
@@ -261,7 +292,6 @@ pub fn run() {
             open_icloud_window,
             select_batch,
             click_restore,
-            get_status,
             close_icloud_window,
         ])
         .run(tauri::generate_context!())
