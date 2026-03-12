@@ -17,13 +17,14 @@ async fn eval_in_icloud(
 
     let sentinel = format!("__IREVIVE_{}", uuid::Uuid::new_v4());
 
+    // Store result in a global variable instead of document.title (which iCloud overwrites)
     let wrapped_js = format!(
         r#"(async () => {{
             try {{
                 const __r = await (async () => {{ {js_code} }})();
-                document.title = "{sentinel}:" + JSON.stringify(__r);
+                window.__irevive_result = "{sentinel}:" + JSON.stringify(__r);
             }} catch(e) {{
-                document.title = "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}});
+                window.__irevive_result = "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}});
             }}
         }})();"#,
     );
@@ -32,21 +33,31 @@ async fn eval_in_icloud(
         .eval(&wrapped_js)
         .map_err(|e| format!("eval failed: {}", e))?;
 
-    // Poll document.title for the result (no timeout - operations can take a while)
+    // Poll window.__irevive_result via document.title snapshot
     loop {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
         // Check if the iCloud window is still open
         if app_handle.get_webview_window("icloud").is_none() {
             return Err("iCloud window was closed".into());
         }
 
+        // Copy result to title for reading, then clear it
+        let check_js = format!(
+            r#"if (window.__irevive_result && window.__irevive_result.startsWith("{sentinel}:")) {{
+                document.title = window.__irevive_result;
+                window.__irevive_result = null;
+            }}"#,
+        );
+        let _ = icloud_win.eval(&check_js);
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
         if let Ok(title) = icloud_win.title() {
             let prefix = format!("{}:", sentinel);
             if title.starts_with(&prefix) {
                 let json_str = &title[prefix.len()..];
-                // Reset the title
-                let _ = icloud_win.eval("document.title = document.title.replace(/^__IREVIVE_.*?:/, '')");
+                let _ = icloud_win.eval("document.title = ''");
                 return serde_json::from_str(json_str).map_err(|e| {
                     format!("Failed to parse response: {} (raw: {})", e, json_str)
                 });
@@ -93,35 +104,11 @@ async fn open_icloud_window(
 }
 
 #[tauri::command]
-async fn scan_page(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    eval_in_icloud(
-        &app_handle,
-        r#"
-        const stdCheckboxes = document.querySelectorAll('input[type="checkbox"]').length;
-        const stdUnchecked = document.querySelectorAll('input[type="checkbox"]:not(:checked)').length;
-        const ariaCheckboxes = document.querySelectorAll('[role="checkbox"]').length;
-        const ariaUnchecked = document.querySelectorAll('[role="checkbox"][aria-checked="false"]').length;
-        const rows = document.querySelectorAll('[role="row"]').length;
-        const listItems = document.querySelectorAll('[role="listitem"]').length;
-        const options = document.querySelectorAll('[role="option"]').length;
-        const selectedRows = document.querySelectorAll('[role="row"][aria-selected="true"]').length;
-        const buttons = document.querySelectorAll('button, [role="button"]').length;
-        return {
-            ok: true,
-            stdCheckboxes, stdUnchecked,
-            ariaCheckboxes, ariaUnchecked,
-            rows, listItems, options, selectedRows, buttons
-        };
-        "#,
-    )
-    .await
-}
-
-#[tauri::command]
 async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Result<Value, String> {
     let n = count.unwrap_or(500);
     let js = format!(
         r#"
+        const delay = ms => new Promise(r => setTimeout(r, ms));
         const limit = {n};
         let count = 0;
         let method = "none-found";
@@ -132,6 +119,7 @@ async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Resul
             el.scrollIntoView({{ block: "center" }});
             el.click();
             count++;
+            if (count % 10 === 0) await delay(5);
         }}
         if (count > 0) return {{ ok: true, selected: count, method: "standard-checkbox" }};
 
@@ -141,6 +129,7 @@ async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Resul
             el.scrollIntoView({{ block: "center" }});
             el.click();
             count++;
+            if (count % 10 === 0) await delay(5);
         }}
         if (count > 0) return {{ ok: true, selected: count, method: "aria-checkbox" }};
 
@@ -157,6 +146,7 @@ async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Resul
                 el.scrollIntoView({{ block: "center" }});
                 el.click();
                 count++;
+                if (count % 10 === 0) await delay(5);
             }}
             if (count > 0) break;
         }}
@@ -269,7 +259,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_icloud_window,
-            scan_page,
             select_batch,
             click_restore,
             get_status,

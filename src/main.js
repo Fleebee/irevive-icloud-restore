@@ -6,12 +6,10 @@ const { openUrl } = window.__TAURI__["opener"];
 const logArea = () => document.getElementById("log-area");
 const statusDot = () => document.getElementById("status-dot");
 const statusText = () => document.getElementById("status-text");
-const countTotal = () => document.getElementById("count-total");
 const countSelected = () => document.getElementById("count-selected");
 const countRestored = () => document.getElementById("count-restored");
 
 const btnLaunch = () => document.getElementById("btn-launch");
-const btnScan = () => document.getElementById("btn-scan");
 const btnSelect = () => document.getElementById("btn-select");
 const btnRestore = () => document.getElementById("btn-restore");
 const btnClearLog = () => document.getElementById("btn-clear-log");
@@ -67,14 +65,12 @@ function setStatus(state, text) {
   label.textContent = text;
 }
 
-function updateCounters(total, selected, restored) {
-  if (total !== undefined && total !== null) countTotal().textContent = total;
+function updateCounters(selected, restored) {
   if (selected !== undefined && selected !== null) countSelected().textContent = selected;
   if (restored !== undefined && restored !== null) countRestored().textContent = restored;
 }
 
 function enableActionButtons(enabled) {
-  btnScan().disabled = !enabled;
   btnSelect().disabled = !enabled;
   btnRestore().disabled = !enabled;
 }
@@ -109,46 +105,6 @@ async function launchBrowser() {
   }
 }
 
-async function scanPage() {
-  try {
-    setStatus("working", "Scanning...");
-    showLoader(true);
-    log("Scanning page for selectable elements...");
-    const r = await invoke("scan_page");
-    setStatus("connected", "Connected");
-
-    if (r && r.ok) {
-      // Items are represented by multiple overlapping selectors (checkbox + aria + row),
-      // so use the highest single count as the true item count
-      const total = Math.max(
-        r.stdCheckboxes || 0,
-        r.ariaCheckboxes || 0,
-        r.rows || 0,
-        r.listItems || 0,
-        r.options || 0
-      );
-      const checked = Math.max(
-        (r.stdCheckboxes || 0) - (r.stdUnchecked || 0),
-        (r.ariaCheckboxes || 0) - (r.ariaUnchecked || 0),
-        r.selectedRows || 0
-      );
-      updateCounters(total, checked, undefined);
-      log(
-        `Scan: ${total} items on page (${checked} selected)`,
-        "success"
-      );
-      log(`  Raw: ${r.stdCheckboxes || 0} checkboxes, ${r.ariaCheckboxes || 0} aria, ${r.rows || 0} rows, ${r.buttons || 0} buttons`);
-    } else {
-      log(r?.error || "Scan returned no data.", "error");
-    }
-  } catch (err) {
-    setStatus("connected", "Connected");
-    log(`Scan failed: ${err}`, "error");
-  } finally {
-    showLoader(false);
-  }
-}
-
 async function selectBatch() {
   const count = parseInt(document.getElementById("batch-size").value) || 500;
   try {
@@ -160,7 +116,7 @@ async function selectBatch() {
 
     if (r && r.ok) {
       // Show only what was just selected - scan will give accurate total
-      updateCounters(undefined, r.selected || 0, undefined);
+      updateCounters(r.selected || 0, undefined);
       log(`Selected ${r.selected} items (method: ${r.method})`, "success");
       if (r.selected === 0) {
         log("No unchecked items found. Try scanning first or check if items have loaded.", "warn");
@@ -194,7 +150,7 @@ async function clickRestore() {
         const match = btnText.match(/(\d+)/);
         const restoredCount = match ? parseInt(match[1]) : (parseInt(countSelected().textContent) || 0);
         totalRestored += restoredCount;
-        updateCounters(undefined, 0, totalRestored);
+        updateCounters(0, totalRestored);
         log(`Restore clicked: "${btnText}" (${restoredCount} files)`, "success");
         log(`Total restored this session: ${totalRestored}`);
       }
@@ -213,7 +169,6 @@ async function clickRestore() {
 
 window.addEventListener("DOMContentLoaded", () => {
   btnLaunch().addEventListener("click", launchBrowser);
-  btnScan().addEventListener("click", scanPage);
   btnSelect().addEventListener("click", selectBatch);
   btnRestore().addEventListener("click", clickRestore);
   btnClearLog().addEventListener("click", () => {
