@@ -239,12 +239,27 @@ function showUpdateModal(update) {
     log("Downloading update...", "info");
     showLoader(true);
     await update.downloadAndInstall();
-    log("Update installed. Restarting...", "success");
-    await relaunch();
+    showLoader(false);
+    // Show restart prompt
+    showRestartModal();
   };
 
   document.getElementById("btn-update-ignore").onclick = () => {
     modal.classList.remove("active");
     log("Update skipped.", "warn");
+  };
+}
+
+function showRestartModal() {
+  const modal = document.getElementById("modal-restart");
+  modal.classList.add("active");
+
+  document.getElementById("btn-restart-now").onclick = async () => {
+    await relaunch();
+  };
+
+  document.getElementById("btn-restart-later").onclick = () => {
+    modal.classList.remove("active");
+    log("Update installed. Restart to apply.", "info");
   };
 }
