@@ -32,10 +32,15 @@ async fn eval_in_icloud(
         .eval(&wrapped_js)
         .map_err(|e| format!("eval failed: {}", e))?;
 
-    // Poll document.title for the result
-    for _ in 0..200 {
-        // 200 * 50ms = 10 second timeout
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Poll document.title for the result (no timeout - operations can take a while)
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Check if the iCloud window is still open
+        if app_handle.get_webview_window("icloud").is_none() {
+            return Err("iCloud window was closed".into());
+        }
+
         if let Ok(title) = icloud_win.title() {
             let prefix = format!("{}:", sentinel);
             if title.starts_with(&prefix) {
@@ -48,8 +53,6 @@ async fn eval_in_icloud(
             }
         }
     }
-
-    Err("Eval timed out after 10 seconds".into())
 }
 
 #[tauri::command]

@@ -79,6 +79,10 @@ function enableActionButtons(enabled) {
   btnRestore().disabled = !enabled;
 }
 
+function showLoader(on) {
+  document.getElementById("loader-bar").classList.toggle("active", on);
+}
+
 // ── Actions ─────────────────────────────────────────────────
 
 async function launchBrowser() {
@@ -88,6 +92,7 @@ async function launchBrowser() {
   }
   try {
     setStatus("working", "Launching...");
+    showLoader(true);
     btnLaunch().disabled = true;
     log("Opening iCloud window...");
     const result = await invoke("open_icloud_window");
@@ -99,12 +104,15 @@ async function launchBrowser() {
     setStatus("disconnected", "Disconnected");
     btnLaunch().disabled = false;
     log(`Failed to open iCloud window: ${err}`, "error");
+  } finally {
+    showLoader(false);
   }
 }
 
 async function scanPage() {
   try {
     setStatus("working", "Scanning...");
+    showLoader(true);
     log("Scanning page for selectable elements...");
     const r = await invoke("scan_page");
     setStatus("connected", "Connected");
@@ -136,12 +144,15 @@ async function scanPage() {
   } catch (err) {
     setStatus("connected", "Connected");
     log(`Scan failed: ${err}`, "error");
+  } finally {
+    showLoader(false);
   }
 }
 
 async function selectBatch() {
   try {
     setStatus("working", "Selecting 500...");
+    showLoader(true);
     log("Selecting next batch of 500 items...");
     const r = await invoke("select_batch");
     setStatus("connected", "Connected");
@@ -159,12 +170,15 @@ async function selectBatch() {
   } catch (err) {
     setStatus("connected", "Connected");
     log(`Selection failed: ${err}`, "error");
+  } finally {
+    showLoader(false);
   }
 }
 
 async function clickRestore() {
   try {
     setStatus("working", "Restoring...");
+    showLoader(true);
     log("Clicking restore button...");
     const r = await invoke("click_restore");
     setStatus("connected", "Connected");
@@ -184,6 +198,8 @@ async function clickRestore() {
   } catch (err) {
     setStatus("connected", "Connected");
     log(`Restore failed: ${err}`, "error");
+  } finally {
+    showLoader(false);
   }
 }
 

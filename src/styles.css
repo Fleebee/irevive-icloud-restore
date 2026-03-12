@@ -264,6 +264,36 @@ body {
   color: var(--text-secondary);
 }
 
+/* ── Loader Bar ─────────────────────────────────────────── */
+
+.loader-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-card);
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.loader-bar.active {
+  opacity: 1;
+}
+
+.loader-bar.active::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-hover), var(--accent), transparent);
+  border-radius: 2px;
+  animation: loaderSlide 1.2s ease-in-out infinite;
+}
+
+@keyframes loaderSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
 /* ── Log Area ────────────────────────────────────────────── */
 
 .log-section {
