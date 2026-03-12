@@ -150,11 +150,12 @@ async function scanPage() {
 }
 
 async function selectBatch() {
+  const count = parseInt(document.getElementById("batch-size").value) || 500;
   try {
-    setStatus("working", "Selecting 500...");
+    setStatus("working", `Selecting ${count}...`);
     showLoader(true);
-    log("Selecting next batch of 500 items...");
-    const r = await invoke("select_batch");
+    log(`Selecting next batch of ${count} items...`);
+    const r = await invoke("select_batch", { count });
     setStatus("connected", "Connected");
 
     if (r && r.ok) {
@@ -184,16 +185,21 @@ async function clickRestore() {
     setStatus("connected", "Connected");
 
     if (r && r.ok) {
-      // Try to extract actual count from button text like "Restore 50 Files"
-      const btnText = r.buttonText || r.status || "";
-      const match = btnText.match(/(\d+)/);
-      const restoredCount = match ? parseInt(match[1]) : (parseInt(countSelected().textContent) || 0);
-      totalRestored += restoredCount;
-      updateCounters(undefined, 0, totalRestored);
-      log(`Restore clicked: "${btnText}" (${restoredCount} files)`, "success");
-      log(`Total restored this session: ${totalRestored}`);
+      if (r.confirmed) {
+        log(`Dialog confirmed: "${r.buttonText}"`, "success");
+        log("Ready for next batch — click Select then Restore.");
+      } else {
+        // Try to extract actual count from button text like "Restore 50 Files"
+        const btnText = r.buttonText || r.status || "";
+        const match = btnText.match(/(\d+)/);
+        const restoredCount = match ? parseInt(match[1]) : (parseInt(countSelected().textContent) || 0);
+        totalRestored += restoredCount;
+        updateCounters(undefined, 0, totalRestored);
+        log(`Restore clicked: "${btnText}" (${restoredCount} files)`, "success");
+        log(`Total restored this session: ${totalRestored}`);
+      }
     } else {
-      log(r?.error || "Could not find restore button.", "error");
+      log(r?.error || "Could not find restore or confirm button.", "error");
     }
   } catch (err) {
     setStatus("connected", "Connected");

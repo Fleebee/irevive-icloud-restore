@@ -174,6 +174,18 @@ async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
         &app_handle,
         r#"
         const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+
+        // First check for a confirmation dialog (OK / Done / Got it)
+        const confirmBtn = allBtns.find(btn => {
+            const text = (btn.textContent || "").trim().toLowerCase();
+            return text === "ok" || text === "done" || text === "got it" || text === "close";
+        });
+        if (confirmBtn) {
+            confirmBtn.click();
+            return { ok: true, status: "Confirmed dialog", buttonText: confirmBtn.textContent.trim(), confirmed: true };
+        }
+
+        // Otherwise look for the restore/recover button
         const restoreBtn = allBtns.find(btn => {
             const text = (btn.textContent || "").toLowerCase();
             if (!text.includes("restore") && !text.includes("recover")) return false;
@@ -183,7 +195,7 @@ async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
         });
 
         if (!restoreBtn) {
-            return { ok: false, error: "No restore/recover button found" };
+            return { ok: false, error: "No restore or confirm button found" };
         }
 
         // Scroll modal/dialog container to bottom first

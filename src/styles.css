@@ -253,6 +253,45 @@ body {
   color: var(--accent-hover);
 }
 
+.batch-control {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 120px;
+  gap: 0;
+}
+
+.batch-control .btn {
+  border-radius: var(--radius) 0 0 var(--radius);
+  min-width: 80px;
+  flex: 1;
+}
+
+.batch-input {
+  width: 70px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+.batch-input::-webkit-inner-spin-button,
+.batch-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.batch-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .btn-secondary {
   color: var(--text-muted);
   border-color: transparent;
