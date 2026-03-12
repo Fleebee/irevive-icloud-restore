@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Rust build
+src-tauri/target/
+
+# Javelin config (contains PAT/secrets)
+javelin.conf.json
+
+# Environment
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

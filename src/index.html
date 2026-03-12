@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>iRevive</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <header class="app-header">
+        <div class="brand">
+          <img src="assets/logo.svg" alt="iRevive" class="app-logo" />
+          <div class="brand-text">
+            <h1 class="app-title">
+              <span class="title-icon">i</span>Revive
+              <span class="tagline">For when iCloud Restore messes you about.</span>
+            </h1>
+            <a href="https://gilroy.digital" target="_blank" rel="noopener noreferrer" class="brand-link" id="brand-link">gilroy.digital</a>
+          </div>
+        </div>
+        <div class="header-right">
+          <button id="btn-help" class="btn-icon" title="How to use">?</button>
+          <span class="help-hint" id="help-hint">Click here for instructions</span>
+          <button id="btn-donate" class="btn-icon btn-donate-icon" title="Donate">Donate</button>
+          <div class="status-bar">
+            <span class="status-dot" id="status-dot"></span>
+            <span class="status-text" id="status-text">Disconnected</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="counters">
+        <div class="counter-card">
+          <span class="counter-value" id="count-total">0</span>
+          <span class="counter-label">Total Found</span>
+        </div>
+        <div class="counter-card">
+          <span class="counter-value" id="count-selected">0</span>
+          <span class="counter-label">Selected</span>
+        </div>
+        <div class="counter-card">
+          <span class="counter-value" id="count-restored">0</span>
+          <span class="counter-label">Restored</span>
+        </div>
+      </section>
+
+      <section class="controls">
+        <button id="btn-launch" class="btn btn-primary">Launch Browser</button>
+        <button id="btn-scan" class="btn" disabled>Scan Page</button>
+        <button id="btn-select" class="btn" disabled>Select 500</button>
+        <button id="btn-restore" class="btn btn-accent" disabled>Click Restore</button>
+        <button id="btn-dump" class="btn btn-secondary" disabled>Dump HTML</button>
+      </section>
+
+      <section class="log-section">
+        <div class="log-header">
+          <span>Log</span>
+          <button id="btn-clear-log" class="btn-small">Clear</button>
+        </div>
+        <div class="log-area" id="log-area"></div>
+      </section>
+    </main>
+
+    <!-- Help Modal -->
+    <div class="modal-overlay" id="modal-help">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>How to Use</h2>
+          <button class="modal-close" id="close-help">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="help-steps">
+            <div class="help-step">
+              <span class="step-num">1</span>
+              <div>
+                <strong>Launch Browser</strong>
+                <p>Click "Launch Browser" to open Chromium. It will navigate to iCloud's Data Recovery page.</p>
+              </div>
+            </div>
+            <div class="help-step">
+              <span class="step-num">2</span>
+              <div>
+                <strong>Sign In</strong>
+                <p>In the browser window, sign in with your Apple ID and complete 2FA. Navigate to the "Restore Files" section.</p>
+              </div>
+            </div>
+            <div class="help-step">
+              <span class="step-num">3</span>
+              <div>
+                <strong>Wait for Items to Load</strong>
+                <p>Let the file list start loading. You don't need to wait for all items -- a few hundred is enough to start.</p>
+              </div>
+            </div>
+            <div class="help-step">
+              <span class="step-num">4</span>
+              <div>
+                <strong>Scan Page</strong>
+                <p>Click "Scan Page" to detect selectable items. The counters will update with what was found.</p>
+              </div>
+            </div>
+            <div class="help-step">
+              <span class="step-num">5</span>
+              <div>
+                <strong>Select 500</strong>
+                <p>Click "Select 500" to automatically check the next 500 unchecked items in the list.</p>
+              </div>
+            </div>
+            <div class="help-step">
+              <span class="step-num">6</span>
+              <div>
+                <strong>Click Restore</strong>
+                <p>Click "Click Restore" to find and press the Restore button on the page (even if it's scrolled off-screen).</p>
+              </div>
+            </div>
+            <div class="help-step">
+              <span class="step-num">7</span>
+              <div>
+                <strong>Repeat</strong>
+                <p>Wait for the restore to process, then repeat steps 5-6 for the next batch. Keep going until all items are restored.</p>
+              </div>
+            </div>
+          </div>
+          <div class="help-tip">
+            <strong>Tip:</strong> Use "Dump HTML" if buttons aren't working -- it shows the raw page structure for debugging.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Donate Modal -->
+    <div class="modal-overlay" id="modal-donate">
+      <div class="modal modal-donate">
+        <div class="modal-header">
+          <h2>Support This Project</h2>
+          <button class="modal-close" id="close-donate">&times;</button>
+        </div>
+        <div class="modal-body donate-body">
+          <p class="donate-text">
+            If iRevive saved you from manually clicking through thousands of files, consider supporting the project.
+          </p>
+          <a
+            href="https://donate.stripe.com/14A28r1Fq9yNf7agVqfbq02"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-primary donate-link"
+          >
+            Donate via Stripe
+          </a>
+          <p class="donate-subtext">Every bit helps. Thank you!</p>
+          <div class="credits">
+            <p>Built by <strong>Leon Gilroy</strong></p>
+            <p class="credits-business">Gilroy Digital</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
