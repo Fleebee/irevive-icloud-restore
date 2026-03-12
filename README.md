@@ -11,20 +11,18 @@ iRevive automates the painful process of restoring thousands of files from iClou
 1. **Open iCloud** - Opens a window to iCloud's Data Recovery page
 2. **Sign In** - Sign in with your Apple ID and navigate to Restore Files
 3. **Wait for Items to Load** - Let the file list start loading
-4. **Scan Page** - Detects selectable items on the page
-5. **Select Items** - Automatically checks a batch of items (configurable, default 500)
-6. **Click Restore** - Finds and clicks the Restore button, even if scrolled off-screen
-7. **Confirm** - Click the confirmation dialog in iCloud
-8. **Repeat** - Keep going until all items are restored
+4. **Select Items** - Automatically checks a batch of items (configurable, default 500)
+5. **Restore / Confirm** - Clicks the Restore button, or dismisses the confirmation dialog
+6. **Repeat** - Keep going until all items are restored
 
 ## Features
 
 - Self-contained native macOS app - no dependencies required
 - Configurable batch size (select 50, 500, or any number at a time)
+- Real-time selection counter updates as items are checked
 - Automatic restore button detection (works even when scrolled off-screen)
-- Confirmation dialog detection - one button handles both restore and confirm
-- Loading indicator for long operations
-- Detects when the iCloud window is closed
+- One button handles both restore and confirmation dialogs
+- Code-signed and notarized for macOS
 
 ## Build from Source
 

@@ -1,5 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const { openUrl } = window.__TAURI__["opener"];
+const { check } = window.__TAURI__["updater"];
+const { relaunch } = window.__TAURI__["process"];
 
 // ── DOM refs ────────────────────────────────────────────────
 
@@ -205,5 +207,27 @@ document.getElementById("close-help").addEventListener("click", () => {
   });
 
   setStatus("disconnected", "Disconnected");
-  log("iRevive ready. Click ? for instructions.", "info");
+  log("iRevive ready.", "info");
+
+  // Check for updates silently
+  checkForUpdates();
 });
+
+async function checkForUpdates() {
+  try {
+    const update = await check();
+    if (update) {
+      log(`Update available: v${update.version}`, "info");
+      const yes = confirm(`iRevive v${update.version} is available. Update now?`);
+      if (yes) {
+        log("Downloading update...", "info");
+        showLoader(true);
+        await update.downloadAndInstall();
+        log("Update installed. Restarting...", "success");
+        await relaunch();
+      }
+    }
+  } catch (e) {
+    // Silently ignore update check failures
+  }
+}
