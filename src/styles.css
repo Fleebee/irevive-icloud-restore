@@ -778,6 +778,56 @@ body {
   margin-top: 2px;
 }
 
+/* ── Update Modal ──────────────────────────────────────── */
+
+.modal-update {
+  max-width: 360px;
+  text-align: center;
+}
+
+.update-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 28px;
+  gap: 12px;
+}
+
+.update-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.update-body h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.update-text {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.update-buttons {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.update-buttons .btn {
+  flex: 1;
+}
+
 .mail-link {
   color: var(--text-secondary) !important;
   text-decoration: none !important;

@@ -218,16 +218,29 @@ async function checkForUpdates() {
     const update = await check();
     if (update) {
       log(`Update available: v${update.version}`, "info");
-      const yes = confirm(`iRevive v${update.version} is available. Update now?`);
-      if (yes) {
-        log("Downloading update...", "info");
-        showLoader(true);
-        await update.downloadAndInstall();
-        log("Update installed. Restarting...", "success");
-        await relaunch();
-      }
+      showUpdateModal(update);
     }
   } catch (e) {
     // Silently ignore update check failures
   }
+}
+
+function showUpdateModal(update) {
+  const modal = document.getElementById("modal-update");
+  document.getElementById("update-version").textContent = `v${update.version}`;
+  modal.classList.add("active");
+
+  document.getElementById("btn-update-now").onclick = async () => {
+    modal.classList.remove("active");
+    log("Downloading update...", "info");
+    showLoader(true);
+    await update.downloadAndInstall();
+    log("Update installed. Restarting...", "success");
+    await relaunch();
+  };
+
+  document.getElementById("btn-update-ignore").onclick = () => {
+    modal.classList.remove("active");
+    log("Update skipped.", "warn");
+  };
 }
