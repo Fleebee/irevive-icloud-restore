@@ -6,7 +6,9 @@ struct AppState {
     icloud_open: Mutex<bool>,
 }
 
-/// Execute JavaScript in the iCloud webview and get the result back via document.title polling.
+/// Execute JavaScript in the iCloud webview and get the result back.
+/// Uses a setInterval to continuously hammer document.title with the result
+/// so we can catch it even when iCloud's React keeps overwriting it.
 async fn eval_in_icloud(
     app_handle: &tauri::AppHandle,
     js_code: &str,
@@ -17,29 +19,20 @@ async fn eval_in_icloud(
 
     let sentinel = format!("__IREVIVE_{}", uuid::Uuid::new_v4());
 
-    // Use a hidden DOM element to store results - React won't touch it
+    // Run the JS and then start an interval that keeps setting document.title
+    // every 5ms until we clear it from Rust. This beats iCloud's React updates.
     let wrapped_js = format!(
         r#"(async () => {{
+            let __result;
             try {{
-                const __r = await (async () => {{ {js_code} }})();
-                let el = document.getElementById("__irevive_result");
-                if (!el) {{
-                    el = document.createElement("div");
-                    el.id = "__irevive_result";
-                    el.style.display = "none";
-                    document.documentElement.appendChild(el);
-                }}
-                el.setAttribute("data-result", "{sentinel}:" + JSON.stringify(__r));
+                __result = "{sentinel}:" + JSON.stringify(await (async () => {{ {js_code} }})());
             }} catch(e) {{
-                let el = document.getElementById("__irevive_result");
-                if (!el) {{
-                    el = document.createElement("div");
-                    el.id = "__irevive_result";
-                    el.style.display = "none";
-                    document.documentElement.appendChild(el);
-                }}
-                el.setAttribute("data-result", "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}}));
+                __result = "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}});
             }}
+            // Keep hammering the title until Rust clears __irevive_interval
+            window.__irevive_interval = setInterval(() => {{
+                document.title = __result;
+            }}, 5);
         }})();"#,
     );
 
@@ -47,37 +40,23 @@ async fn eval_in_icloud(
         .eval(&wrapped_js)
         .map_err(|e| format!("eval failed: {}", e))?;
 
-    // Poll the hidden element via document.title
+    // Poll document.title - the interval ensures it keeps getting set back
     loop {
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
         // Check if the iCloud window is still open
         if app_handle.get_webview_window("icloud").is_none() {
             return Err("iCloud window was closed".into());
         }
 
-        // Read the result element into document.title
-        let check_js = format!(
-            r#"(() => {{
-                const el = document.getElementById("__irevive_result");
-                if (el) {{
-                    const r = el.getAttribute("data-result") || "";
-                    if (r.startsWith("{sentinel}:")) {{
-                        document.title = r;
-                        el.removeAttribute("data-result");
-                    }}
-                }}
-            }})();"#,
-        );
-        let _ = icloud_win.eval(&check_js);
-
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
         if let Ok(title) = icloud_win.title() {
             let prefix = format!("{}:", sentinel);
             if title.starts_with(&prefix) {
                 let json_str = &title[prefix.len()..];
-                let _ = icloud_win.eval("document.title = ''");
+                // Stop the interval and reset title
+                let _ = icloud_win.eval(
+                    "clearInterval(window.__irevive_interval); window.__irevive_interval = null; document.title = '';"
+                );
                 return serde_json::from_str(json_str).map_err(|e| {
                     format!("Failed to parse response: {} (raw: {})", e, json_str)
                 });
