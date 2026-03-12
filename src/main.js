@@ -82,16 +82,16 @@ async function launchBrowser() {
   try {
     setStatus("working", "Launching...");
     btnLaunch().disabled = true;
-    log("Launching browser...");
-    const result = await invoke("launch_browser");
+    log("Opening iCloud window...");
+    const result = await invoke("open_icloud_window");
     browserLaunched = true;
     setStatus("connected", "Connected");
     enableActionButtons(true);
-    log(result?.status || "Browser launched successfully.", "success");
+    log(result?.status || "iCloud window opened.", "success");
   } catch (err) {
     setStatus("disconnected", "Disconnected");
     btnLaunch().disabled = false;
-    log(`Failed to launch browser: ${err}`, "error");
+    log(`Failed to open iCloud window: ${err}`, "error");
   }
 }
 

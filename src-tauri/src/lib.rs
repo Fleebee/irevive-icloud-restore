@@ -1,173 +1,254 @@
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::Manager;
 
 struct AppState {
-    child: Mutex<Option<Child>>,
-    stdin: Mutex<Option<std::process::ChildStdin>>,
-    reader: Mutex<Option<BufReader<std::process::ChildStdout>>>,
+    icloud_open: Mutex<bool>,
 }
 
-/// Send a JSON message to the child process and read back one JSON line response.
-fn send_and_receive(
-    stdin: &State<'_, AppState>,
-    msg: Value,
+/// Execute JavaScript in the iCloud webview and get the result back via document.title polling.
+async fn eval_in_icloud(
+    app_handle: &tauri::AppHandle,
+    js_code: &str,
 ) -> Result<Value, String> {
-    let mut stdin_lock = stdin
-        .stdin
-        .lock()
-        .map_err(|e| format!("Failed to lock stdin: {}", e))?;
-    let mut reader_lock = stdin
-        .reader
-        .lock()
-        .map_err(|e| format!("Failed to lock reader: {}", e))?;
+    let icloud_win = app_handle
+        .get_webview_window("icloud")
+        .ok_or("iCloud window not open. Click 'Open iCloud' first.")?;
 
-    let writer = stdin_lock
-        .as_mut()
-        .ok_or("Browser not launched - no stdin available")?;
-    let reader = reader_lock
-        .as_mut()
-        .ok_or("Browser not launched - no reader available")?;
+    let sentinel = format!("__IREVIVE_{}", uuid::Uuid::new_v4());
 
-    let mut line = msg.to_string();
-    line.push('\n');
-    writer
-        .write_all(line.as_bytes())
-        .map_err(|e| format!("Failed to write to child stdin: {}", e))?;
-    writer
-        .flush()
-        .map_err(|e| format!("Failed to flush child stdin: {}", e))?;
+    let wrapped_js = format!(
+        r#"(async () => {{
+            try {{
+                const __r = await (async () => {{ {js_code} }})();
+                document.title = "{sentinel}:" + JSON.stringify(__r);
+            }} catch(e) {{
+                document.title = "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}});
+            }}
+        }})();"#,
+    );
 
-    let mut response = String::new();
-    reader
-        .read_line(&mut response)
-        .map_err(|e| format!("Failed to read from child stdout: {}", e))?;
+    icloud_win
+        .eval(&wrapped_js)
+        .map_err(|e| format!("eval failed: {}", e))?;
 
-    if response.is_empty() {
-        return Err("Child process closed stdout unexpectedly".into());
+    // Poll document.title for the result
+    for _ in 0..200 {
+        // 200 * 50ms = 10 second timeout
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        if let Ok(title) = icloud_win.title() {
+            let prefix = format!("{}:", sentinel);
+            if title.starts_with(&prefix) {
+                let json_str = &title[prefix.len()..];
+                // Reset the title
+                let _ = icloud_win.eval("document.title = document.title.replace(/^__IREVIVE_.*?:/, '')");
+                return serde_json::from_str(json_str).map_err(|e| {
+                    format!("Failed to parse response: {} (raw: {})", e, json_str)
+                });
+            }
+        }
     }
 
-    serde_json::from_str(&response)
-        .map_err(|e| format!("Failed to parse child response: {} (raw: {})", e, response.trim()))
+    Err("Eval timed out after 10 seconds".into())
 }
 
 #[tauri::command]
-fn launch_browser(
-    state: State<'_, AppState>,
+async fn open_icloud_window(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Value, String> {
-    // Determine bridge script path: next to the executable in production,
-    // or in the src-tauri directory during development.
-    let bridge_path = app_handle
-        .path()
-        .resource_dir()
-        .map(|d| d.join("playwright-bridge.cjs"))
-        .unwrap_or_else(|_| {
-            std::env::current_dir()
-                .unwrap_or_default()
-                .join("playwright-bridge.cjs")
+    // Check if already open
+    if let Some(win) = app_handle.get_webview_window("icloud") {
+        win.set_focus().map_err(|e| e.to_string())?;
+        return Ok(json!({"ok": true, "status": "iCloud window focused"}));
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        &app_handle,
+        "icloud",
+        tauri::WebviewUrl::External("https://www.icloud.com/recovery".parse().unwrap()),
+    )
+    .title("iCloud Recovery - Sign In")
+    .inner_size(1200.0, 900.0)
+    .build()
+    .map_err(|e| format!("Failed to create iCloud window: {}", e))?;
+
+    *state.icloud_open.lock().map_err(|e| e.to_string())? = true;
+
+    Ok(json!({"ok": true, "status": "iCloud window opened"}))
+}
+
+#[tauri::command]
+async fn scan_page(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    eval_in_icloud(
+        &app_handle,
+        r#"
+        const stdCheckboxes = document.querySelectorAll('input[type="checkbox"]').length;
+        const stdUnchecked = document.querySelectorAll('input[type="checkbox"]:not(:checked)').length;
+        const ariaCheckboxes = document.querySelectorAll('[role="checkbox"]').length;
+        const ariaUnchecked = document.querySelectorAll('[role="checkbox"][aria-checked="false"]').length;
+        const rows = document.querySelectorAll('[role="row"]').length;
+        const listItems = document.querySelectorAll('[role="listitem"]').length;
+        const options = document.querySelectorAll('[role="option"]').length;
+        const selectedRows = document.querySelectorAll('[role="row"][aria-selected="true"]').length;
+        const buttons = document.querySelectorAll('button, [role="button"]').length;
+        return {
+            ok: true,
+            stdCheckboxes, stdUnchecked,
+            ariaCheckboxes, ariaUnchecked,
+            rows, listItems, options, selectedRows, buttons
+        };
+        "#,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn select_batch(app_handle: tauri::AppHandle, count: Option<u32>) -> Result<Value, String> {
+    let n = count.unwrap_or(500);
+    let js = format!(
+        r#"
+        const limit = {n};
+        let count = 0;
+        let method = "none-found";
+
+        // Strategy 1: standard unchecked checkboxes
+        const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:not(:checked)'));
+        for (const el of checkboxes.slice(0, limit)) {{
+            el.scrollIntoView({{ block: "center" }});
+            el.click();
+            count++;
+        }}
+        if (count > 0) return {{ ok: true, selected: count, method: "standard-checkbox" }};
+
+        // Strategy 2: aria checkboxes
+        const ariaCheckboxes = Array.from(document.querySelectorAll('[role="checkbox"][aria-checked="false"]'));
+        for (const el of ariaCheckboxes.slice(0, limit)) {{
+            el.scrollIntoView({{ block: "center" }});
+            el.click();
+            count++;
+        }}
+        if (count > 0) return {{ ok: true, selected: count, method: "aria-checkbox" }};
+
+        // Strategy 3: selectable rows
+        const selectors = [
+            '[role="row"]:not([aria-selected="true"])',
+            '[role="listitem"]',
+            '[role="option"]'
+        ];
+        for (const sel of selectors) {{
+            if (count >= limit) break;
+            const els = Array.from(document.querySelectorAll(sel));
+            for (const el of els.slice(0, limit - count)) {{
+                el.scrollIntoView({{ block: "center" }});
+                el.click();
+                count++;
+            }}
+            if (count > 0) break;
+        }}
+        if (count > 0) return {{ ok: true, selected: count, method: "row-click" }};
+
+        return {{ ok: true, selected: 0, method: "none-found" }};
+        "#,
+    );
+    eval_in_icloud(&app_handle, &js).await
+}
+
+#[tauri::command]
+async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    eval_in_icloud(
+        &app_handle,
+        r#"
+        const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+        const restoreBtn = allBtns.find(btn => {
+            const text = (btn.textContent || "").toLowerCase();
+            if (!text.includes("restore") && !text.includes("recover")) return false;
+            if (btn.closest(".tile-article")) return false;
+            if (btn.closest(".nav-link")) return false;
+            return true;
         });
 
-    // Fallback: try relative to the tauri source directory during `cargo tauri dev`
-    let bridge_path = if bridge_path.exists() {
-        bridge_path
-    } else {
-        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest_dir.join("playwright-bridge.cjs")
-    };
+        if (!restoreBtn) {
+            return { ok: false, error: "No restore/recover button found" };
+        }
 
-    if !bridge_path.exists() {
-        return Err(format!(
-            "playwright-bridge.cjs not found at {}",
-            bridge_path.display()
-        ));
+        // Scroll modal/dialog container to bottom first
+        const modal =
+            restoreBtn.closest('[role="dialog"]') ||
+            restoreBtn.closest(".modal") ||
+            restoreBtn.closest('[class*="modal"]') ||
+            restoreBtn.closest('[class*="dialog"]');
+        if (modal) {
+            modal.scrollTop = modal.scrollHeight;
+        }
+
+        // Also scroll any overflow parent
+        let parent = restoreBtn.parentElement;
+        while (parent) {
+            if (parent.scrollHeight > parent.clientHeight) {
+                parent.scrollTop = parent.scrollHeight;
+                break;
+            }
+            parent = parent.parentElement;
+        }
+
+        restoreBtn.scrollIntoView({ block: "center", behavior: "instant" });
+        restoreBtn.click();
+
+        return {
+            ok: true,
+            status: "Clicked restore button",
+            buttonText: restoreBtn.textContent.trim().slice(0, 80)
+        };
+        "#,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn dump_html(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    eval_in_icloud(
+        &app_handle,
+        r##"
+        const main =
+            document.querySelector("main") ||
+            document.querySelector('[role="main"]') ||
+            document.querySelector("#content") ||
+            document.querySelector(".app-content") ||
+            document.body;
+        return { ok: true, html: (main.innerHTML || "").slice(0, 50000) };
+        "##,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn get_status(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    eval_in_icloud(
+        &app_handle,
+        r#"
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]').length;
+        const checked = document.querySelectorAll('input[type="checkbox"]:checked').length;
+        const ariaCheckboxes = document.querySelectorAll('[role="checkbox"]').length;
+        const ariaChecked = document.querySelectorAll('[role="checkbox"][aria-checked="true"]').length;
+        const rows = document.querySelectorAll('[role="row"]').length;
+        const selectedRows = document.querySelectorAll('[role="row"][aria-selected="true"]').length;
+        return { ok: true, checkboxes, checked, ariaCheckboxes, ariaChecked, rows, selectedRows };
+        "#,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn close_icloud_window(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<Value, String> {
+    if let Some(win) = app_handle.get_webview_window("icloud") {
+        win.close().map_err(|e| format!("Failed to close: {}", e))?;
     }
-
-    let mut child_proc = Command::new("node")
-        .arg(&bridge_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit()) // bridge logs go to terminal
-        .spawn()
-        .map_err(|e| format!("Failed to spawn node process: {}", e))?;
-
-    let child_stdin = child_proc
-        .stdin
-        .take()
-        .ok_or("Failed to capture child stdin")?;
-    let child_stdout = child_proc
-        .stdout
-        .take()
-        .ok_or("Failed to capture child stdout")?;
-
-    *state
-        .stdin
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))? = Some(child_stdin);
-    *state
-        .reader
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))? = Some(BufReader::new(child_stdout));
-    *state
-        .child
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))? = Some(child_proc);
-
-    // Send the launch command
-    send_and_receive(&state, json!({"action": "launch"}))
-}
-
-#[tauri::command]
-fn scan_page(state: State<'_, AppState>) -> Result<Value, String> {
-    send_and_receive(&state, json!({"action": "scan"}))
-}
-
-#[tauri::command]
-fn select_batch(state: State<'_, AppState>, count: Option<u32>) -> Result<Value, String> {
-    let n = count.unwrap_or(500);
-    send_and_receive(&state, json!({"action": "select", "count": n}))
-}
-
-#[tauri::command]
-fn click_restore(state: State<'_, AppState>) -> Result<Value, String> {
-    send_and_receive(&state, json!({"action": "restore"}))
-}
-
-#[tauri::command]
-fn dump_html(state: State<'_, AppState>) -> Result<Value, String> {
-    send_and_receive(&state, json!({"action": "dump"}))
-}
-
-#[tauri::command]
-fn get_status(state: State<'_, AppState>) -> Result<Value, String> {
-    send_and_receive(&state, json!({"action": "status"}))
-}
-
-#[tauri::command]
-fn stop_browser(state: State<'_, AppState>) -> Result<Value, String> {
-    // Drop stdin/reader so the child's pipes close
-    *state
-        .stdin
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))? = None;
-    *state
-        .reader
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))? = None;
-
-    let mut child_lock = state
-        .child
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-
-    if let Some(mut child) = child_lock.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-
-    Ok(json!({"ok": true, "status": "Browser stopped"}))
+    *state.icloud_open.lock().map_err(|e| e.to_string())? = false;
+    Ok(json!({"ok": true, "status": "iCloud window closed"}))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -175,18 +256,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            child: Mutex::new(None),
-            stdin: Mutex::new(None),
-            reader: Mutex::new(None),
+            icloud_open: Mutex::new(false),
         })
         .invoke_handler(tauri::generate_handler![
-            launch_browser,
+            open_icloud_window,
             scan_page,
             select_batch,
             click_restore,
             dump_html,
             get_status,
-            stop_browser,
+            close_icloud_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
