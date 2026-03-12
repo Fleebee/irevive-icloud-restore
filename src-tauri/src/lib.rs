@@ -63,7 +63,7 @@ async fn open_icloud_window(
         return Ok(json!({"ok": true, "status": "iCloud window focused"}));
     }
 
-    tauri::WebviewWindowBuilder::new(
+    let win = tauri::WebviewWindowBuilder::new(
         &app_handle,
         "icloud",
         tauri::WebviewUrl::External("https://www.icloud.com/recovery".parse().unwrap()),
@@ -72,6 +72,17 @@ async fn open_icloud_window(
     .inner_size(1200.0, 900.0)
     .build()
     .map_err(|e| format!("Failed to create iCloud window: {}", e))?;
+
+    // Listen for the iCloud window being closed
+    let handle = app_handle.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event {
+            // Notify the main window that iCloud window was closed
+            if let Some(main_win) = handle.get_webview_window("main") {
+                let _ = main_win.eval("window.__onICloudClosed && window.__onICloudClosed()");
+            }
+        }
+    });
 
     *state.icloud_open.lock().map_err(|e| e.to_string())? = true;
 
@@ -206,23 +217,6 @@ async fn click_restore(app_handle: tauri::AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn dump_html(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    eval_in_icloud(
-        &app_handle,
-        r##"
-        const main =
-            document.querySelector("main") ||
-            document.querySelector('[role="main"]') ||
-            document.querySelector("#content") ||
-            document.querySelector(".app-content") ||
-            document.body;
-        return { ok: true, html: (main.innerHTML || "").slice(0, 50000) };
-        "##,
-    )
-    .await
-}
-
-#[tauri::command]
 async fn get_status(app_handle: tauri::AppHandle) -> Result<Value, String> {
     eval_in_icloud(
         &app_handle,
@@ -263,7 +257,6 @@ pub fn run() {
             scan_page,
             select_batch,
             click_restore,
-            dump_html,
             get_status,
             close_icloud_window,
         ])

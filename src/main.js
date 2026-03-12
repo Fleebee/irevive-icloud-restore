@@ -14,13 +14,21 @@ const btnLaunch = () => document.getElementById("btn-launch");
 const btnScan = () => document.getElementById("btn-scan");
 const btnSelect = () => document.getElementById("btn-select");
 const btnRestore = () => document.getElementById("btn-restore");
-const btnDump = () => document.getElementById("btn-dump");
 const btnClearLog = () => document.getElementById("btn-clear-log");
 
 // ── State ───────────────────────────────────────────────────
 
 let browserLaunched = false;
 let totalRestored = 0;
+
+// Called from Rust when the iCloud window is closed
+window.__onICloudClosed = () => {
+  browserLaunched = false;
+  setStatus("disconnected", "Disconnected");
+  enableActionButtons(false);
+  btnLaunch().disabled = false;
+  log("iCloud window closed.", "warn");
+};
 
 // ── Logging ─────────────────────────────────────────────────
 
@@ -69,7 +77,6 @@ function enableActionButtons(enabled) {
   btnScan().disabled = !enabled;
   btnSelect().disabled = !enabled;
   btnRestore().disabled = !enabled;
-  btnDump().disabled = !enabled;
 }
 
 // ── Actions ─────────────────────────────────────────────────
@@ -173,34 +180,10 @@ async function clickRestore() {
       log(`Total restored this session: ${totalRestored}`);
     } else {
       log(r?.error || "Could not find restore button.", "error");
-      log("Try 'Dump HTML' to inspect the page structure.", "warn");
     }
   } catch (err) {
     setStatus("connected", "Connected");
     log(`Restore failed: ${err}`, "error");
-  }
-}
-
-async function dumpHtml() {
-  try {
-    setStatus("working", "Dumping...");
-    log("Dumping page HTML...");
-    const r = await invoke("dump_html");
-    setStatus("connected", "Connected");
-
-    if (r && r.ok && r.html) {
-      log(`HTML dump received (${r.html.length} chars):`, "info");
-      // Show first 3000 chars to keep log manageable
-      log(r.html.substring(0, 3000));
-      if (r.html.length > 3000) {
-        log(`... truncated (${r.html.length - 3000} more chars)`);
-      }
-    } else {
-      log(r?.error || "Dump returned no data.", "error");
-    }
-  } catch (err) {
-    setStatus("connected", "Connected");
-    log(`Dump failed: ${err}`, "error");
   }
 }
 
@@ -211,9 +194,22 @@ window.addEventListener("DOMContentLoaded", () => {
   btnScan().addEventListener("click", scanPage);
   btnSelect().addEventListener("click", selectBatch);
   btnRestore().addEventListener("click", clickRestore);
-  btnDump().addEventListener("click", dumpHtml);
   btnClearLog().addEventListener("click", () => {
     logArea().innerHTML = "";
+  });
+
+  // Welcome splash - show on first launch
+  const modalWelcome = document.getElementById("modal-welcome");
+  document.getElementById("btn-welcome-start").addEventListener("click", () => {
+    modalWelcome.classList.remove("active");
+  });
+
+  // Open external links in welcome screen
+  modalWelcome.querySelectorAll(".donate-link, .brand-link, .mail-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      openUrl(link.href);
+    });
   });
 
   // Modal handlers
@@ -223,10 +219,7 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-help").addEventListener("click", () => {
     modalHelp.classList.add("active");
   });
-  document.getElementById("help-hint").addEventListener("click", () => {
-    modalHelp.classList.add("active");
-  });
-  document.getElementById("close-help").addEventListener("click", () => {
+document.getElementById("close-help").addEventListener("click", () => {
     modalHelp.classList.remove("active");
   });
   document.getElementById("btn-donate").addEventListener("click", () => {

@@ -22,6 +22,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Leon Gilroy (7RV2QA3629)"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

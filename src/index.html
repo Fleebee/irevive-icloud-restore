@@ -22,9 +22,8 @@
           </div>
         </div>
         <div class="header-right">
-          <button id="btn-help" class="btn-icon" title="How to use">?</button>
-          <span class="help-hint" id="help-hint">Click here for instructions</span>
-          <button id="btn-donate" class="btn-icon btn-donate-icon" title="Donate">Donate</button>
+          <button id="btn-help" class="btn-icon" title="How to use">Instructions</button>
+<button id="btn-donate" class="btn-icon btn-donate-icon" title="Donate">Donate</button>
           <div class="status-bar">
             <span class="status-dot" id="status-dot"></span>
             <span class="status-text" id="status-text">Disconnected</span>
@@ -52,7 +51,6 @@
         <button id="btn-scan" class="btn" disabled>Scan Page</button>
         <button id="btn-select" class="btn" disabled>Select 500</button>
         <button id="btn-restore" class="btn btn-accent" disabled>Click Restore</button>
-        <button id="btn-dump" class="btn btn-secondary" disabled>Dump HTML</button>
       </section>
 
       <section class="log-section">
@@ -124,7 +122,43 @@
             </div>
           </div>
           <div class="help-tip">
-            <strong>Tip:</strong> Use "Dump HTML" if buttons aren't working -- it shows the raw page structure for debugging.
+            <strong>Tip:</strong> If buttons aren't working, try scanning the page first to detect the latest page structure.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Welcome Splash -->
+    <div class="modal-overlay active" id="modal-welcome">
+      <div class="modal modal-welcome">
+        <div class="modal-body welcome-body">
+          <img src="assets/logo.svg" alt="iRevive" class="welcome-logo" />
+          <h1 class="welcome-title"><span class="title-icon">i</span>Revive</h1>
+          <p class="welcome-tagline">For when iCloud Restore messes you about.</p>
+
+          <div class="welcome-steps">
+            <div class="welcome-step">
+              <span class="step-num">1</span>
+              <span>Open iCloud and sign in</span>
+            </div>
+            <div class="welcome-step">
+              <span class="step-num">2</span>
+              <span>Navigate to Restore Files and let items load</span>
+            </div>
+            <div class="welcome-step">
+              <span class="step-num">3</span>
+              <span>Select 500 items at a time and click Restore</span>
+            </div>
+          </div>
+
+          <button id="btn-welcome-start" class="btn btn-primary welcome-start">Get Started</button>
+
+          <div class="welcome-footer">
+            <a href="https://donate.stripe.com/14A28r1Fq9yNf7agVqfbq02" target="_blank" rel="noopener noreferrer" class="donate-link welcome-donate-link">Support this project</a>
+            <div class="welcome-credits">
+              <p>Built by <strong>Leon Gilroy</strong> | <a href="https://gilroy.digital" target="_blank" rel="noopener noreferrer" class="brand-link">Gilroy Digital</a></p>
+              <p class="welcome-support"><a href="mailto:leon@gilroy.digital" class="mail-link">leon@gilroy.digital</a></p>
+            </div>
           </div>
         </div>
       </div>

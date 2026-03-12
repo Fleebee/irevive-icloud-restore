@@ -587,3 +587,134 @@ body {
   letter-spacing: 0.04em;
   margin-top: 2px;
 }
+
+/* ── Welcome Splash ─────────────────────────────────────── */
+
+.modal-welcome {
+  max-width: 460px;
+  text-align: center;
+  animation: welcomeIn 0.4s ease-out;
+}
+
+@keyframes welcomeIn {
+  from { opacity: 0; transform: scale(0.92) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.welcome-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 32px 28px;
+  gap: 6px;
+}
+
+.welcome-logo {
+  width: 72px;
+  height: 72px;
+  filter: drop-shadow(0 4px 16px var(--accent-glow));
+  margin-bottom: 8px;
+}
+
+.welcome-title {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.welcome-tagline {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-style: italic;
+  margin-bottom: 20px;
+}
+
+.welcome-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 24px;
+}
+
+.welcome-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.welcome-step .step-num {
+  width: 26px;
+  height: 26px;
+  font-size: 0.72rem;
+}
+
+.welcome-start {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+  margin-bottom: 20px;
+}
+
+.welcome-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  width: 100%;
+}
+
+.welcome-donate-link {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.welcome-donate-link:hover {
+  color: var(--accent-hover);
+}
+
+.welcome-credits {
+  text-align: center;
+}
+
+.welcome-credits p {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.welcome-credits strong {
+  color: var(--text-secondary);
+}
+
+.welcome-credits .brand-link {
+  font-size: 0.75rem;
+}
+
+.welcome-support {
+  color: var(--text-muted);
+  font-size: 0.7rem !important;
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+}
+
+.mail-link {
+  color: var(--text-secondary) !important;
+  text-decoration: none !important;
+  transition: color 0.15s;
+}
+
+.mail-link:hover {
+  color: var(--accent);
+}
