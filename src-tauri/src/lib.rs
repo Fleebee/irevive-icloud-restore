@@ -17,14 +17,28 @@ async fn eval_in_icloud(
 
     let sentinel = format!("__IREVIVE_{}", uuid::Uuid::new_v4());
 
-    // Store result in a global variable instead of document.title (which iCloud overwrites)
+    // Use a hidden DOM element to store results - React won't touch it
     let wrapped_js = format!(
         r#"(async () => {{
             try {{
                 const __r = await (async () => {{ {js_code} }})();
-                window.__irevive_result = "{sentinel}:" + JSON.stringify(__r);
+                let el = document.getElementById("__irevive_result");
+                if (!el) {{
+                    el = document.createElement("div");
+                    el.id = "__irevive_result";
+                    el.style.display = "none";
+                    document.documentElement.appendChild(el);
+                }}
+                el.setAttribute("data-result", "{sentinel}:" + JSON.stringify(__r));
             }} catch(e) {{
-                window.__irevive_result = "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}});
+                let el = document.getElementById("__irevive_result");
+                if (!el) {{
+                    el = document.createElement("div");
+                    el.id = "__irevive_result";
+                    el.style.display = "none";
+                    document.documentElement.appendChild(el);
+                }}
+                el.setAttribute("data-result", "{sentinel}:" + JSON.stringify({{ok: false, error: e.message}}));
             }}
         }})();"#,
     );
@@ -33,25 +47,31 @@ async fn eval_in_icloud(
         .eval(&wrapped_js)
         .map_err(|e| format!("eval failed: {}", e))?;
 
-    // Poll window.__irevive_result via document.title snapshot
+    // Poll the hidden element via document.title
     loop {
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
 
         // Check if the iCloud window is still open
         if app_handle.get_webview_window("icloud").is_none() {
             return Err("iCloud window was closed".into());
         }
 
-        // Copy result to title for reading, then clear it
+        // Read the result element into document.title
         let check_js = format!(
-            r#"if (window.__irevive_result && window.__irevive_result.startsWith("{sentinel}:")) {{
-                document.title = window.__irevive_result;
-                window.__irevive_result = null;
-            }}"#,
+            r#"(() => {{
+                const el = document.getElementById("__irevive_result");
+                if (el) {{
+                    const r = el.getAttribute("data-result") || "";
+                    if (r.startsWith("{sentinel}:")) {{
+                        document.title = r;
+                        el.removeAttribute("data-result");
+                    }}
+                }}
+            }})();"#,
         );
         let _ = icloud_win.eval(&check_js);
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         if let Ok(title) = icloud_win.title() {
             let prefix = format!("{}:", sentinel);
@@ -83,7 +103,8 @@ async fn open_icloud_window(
         tauri::WebviewUrl::External("https://www.icloud.com/recovery".parse().unwrap()),
     )
     .title("iCloud Recovery - Sign In")
-    .inner_size(1200.0, 900.0)
+    .inner_size(800.0, 700.0)
+    .position(50.0, 50.0)
     .build()
     .map_err(|e| format!("Failed to create iCloud window: {}", e))?;
 
