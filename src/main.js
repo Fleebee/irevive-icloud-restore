@@ -2,6 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { openUrl } = window.__TAURI__["opener"];
 const { check } = window.__TAURI__["updater"];
 const { relaunch } = window.__TAURI__["process"];
+const { getVersion } = window.__TAURI__["app"];
 
 // ── DOM refs ────────────────────────────────────────────────
 
@@ -207,6 +208,9 @@ document.getElementById("close-help").addEventListener("click", () => {
   });
 
   setStatus("disconnected", "Disconnected");
+  getVersion().then(v => {
+    document.getElementById("app-version").textContent = `v${v}`;
+  });
   log("iRevive ready.", "info");
 
   // Check for updates silently
