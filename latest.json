@@ -1,11 +1,11 @@
 {
-  "version": "0.3.5",
-  "notes": "Fixed selection flow - no longer gets stuck on Selecting state. Simplified to fire-and-forget with visual feedback.",
+  "version": "0.3.6",
+  "notes": "Update test for v0.3.6",
   "pub_date": "2026-03-12T00:00:00Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUldUcWJJdTlLRVdYd2Y3VDBBRll6czBJc1kvUXRDTWhjM3pvdDk5RGlNZ1RZVVNROW0veW5hNWIxcW52Y0o4QzZLWkpoaEtaTTRWUDRBMTBIc3hFYWwyc0JDUTA3czNLZ2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMzUxMDQzCWZpbGU6aVJldml2ZS5hcHAudGFyLmd6CldCQVZacENhbERqbUk3VzFiYVNuYTRyUEdzcjhZcnN6N003UEdYT0JOcEp0MlpLQW8yVlhJQ2ZmTXFOZ2gydWVPNnZnZXdqcVA1SmZZTktuQzNZakFRPT0K",
-      "url": "https://github.com/Fleebee/irevive-icloud-restore/releases/download/v0.3.5/iRevive.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUcWJJdTlLRVdYd1plMTFaaXc0NG1QNHVKcGFubXU2c2IvR0FMSmRPUHkycFBGRUlPYktETy8yU1Avc0twWG1Fb0xydVd1dWlOMUtMc3JYekczUGthblZTQkNnY2Z2a3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMzUxNjg0CWZpbGU6aVJldml2ZS5hcHAudGFyLmd6CmxlT2dIYTdjdTNkQnRlVXJoeXNIYjU5SVBZSXZpc3hzSTdYMStxcFhGcmI5bTlzTll4RlpXY2VEdGp0Zi9NbTlWMnJGcUUvSHd0eDhVZUlBNVJIOURRPT0K",
+      "url": "https://github.com/Fleebee/irevive-icloud-restore/releases/download/v0.3.6/iRevive.app.tar.gz"
     }
   }
 }
