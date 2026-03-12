@@ -31,13 +31,6 @@ window.__onICloudClosed = () => {
   log("iCloud window closed.", "warn");
 };
 
-// Called from Rust when selection finishes (background progress tracker)
-window.__onSelectDone = (finalCount) => {
-  setStatus("connected", "Connected");
-  showLoader(false);
-  enableActionButtons(true);
-  log(`Selection complete: ${finalCount} items selected.`, "success");
-};
 
 // ── Logging ─────────────────────────────────────────────────
 
@@ -122,10 +115,16 @@ async function selectBatch() {
     setStatus("working", `Selecting ${count}...`);
     showLoader(true);
     enableActionButtons(false);
-    log(`Selecting up to ${count} items...`);
+    log(`Selecting up to ${count} items... please check the iCloud window and click Restore / Confirm when ready.`);
     await invoke("select_batch", { count });
-    // Counter updates come in real-time from Rust background task
-    // __onSelectDone will be called when finished
+    // Fire-and-forget: wait ~10 seconds then assume done
+    setTimeout(() => {
+      setStatus("connected", "Connected");
+      showLoader(false);
+      enableActionButtons(true);
+      updateCounters(count, null);
+      log(`Selection sent. Check the iCloud window to verify items are selected.`, "success");
+    }, 10000);
   } catch (err) {
     setStatus("connected", "Connected");
     showLoader(false);
