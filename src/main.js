@@ -166,9 +166,20 @@ function getAutoWaitMs() {
   return mins * 60 * 1000;
 }
 
+function showAutoCounters(show) {
+  document.getElementById("counters-normal").classList.toggle("hidden", show);
+  document.getElementById("counters-auto").classList.toggle("active", show);
+}
+
+function updateAutoCycleCount() {
+  document.getElementById("auto-cycle-count").textContent = autoCycleCount;
+}
+
 function startAutoMode() {
   autoModeActive = true;
   autoCycleCount = 0;
+  showAutoCounters(true);
+  updateAutoCycleCount();
   btnAuto().textContent = "Stop Auto";
   btnAuto().classList.add("active");
   btnSelect().disabled = true;
@@ -185,6 +196,7 @@ function stopAutoMode() {
   autoTimerInterval = null;
   autoTimeoutId = null;
   hideAutoTimer();
+  showAutoCounters(false);
   btnAuto().textContent = "Auto Mode";
   btnAuto().classList.remove("active");
   if (browserLaunched) {
@@ -251,6 +263,7 @@ async function runAutoCycle() {
   if (!autoModeActive) return;
 
   autoCycleCount++;
+  updateAutoCycleCount();
 
   // Step 4: Wait 5 minutes before next cycle
   log(`[Auto] Waiting ${(getAutoWaitMs() / 60000)} minutes before next cycle...`);

@@ -198,6 +198,33 @@ body {
   color: var(--text-muted);
 }
 
+.counters-auto {
+  display: none;
+  grid-template-columns: 1fr;
+}
+
+.counters-auto.active {
+  display: grid;
+}
+
+.counters-auto.active + .controls,
+.counters.active ~ .controls {
+}
+
+#counters-normal.hidden {
+  display: none;
+}
+
+.counter-card-auto {
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.auto-mode-label {
+  color: var(--green);
+  font-size: 1.4rem;
+  letter-spacing: 0.08em;
+}
+
 /* ── Controls ────────────────────────────────────────────── */
 
 .controls {
