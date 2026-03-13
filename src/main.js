@@ -406,13 +406,36 @@ function showUpdateModal(update) {
   modal.classList.add("active");
 
   document.getElementById("btn-update-now").onclick = async () => {
-    modal.classList.remove("active");
+    const fallback = document.getElementById("update-fallback");
+    fallback.innerHTML = "";
     log("Downloading update...", "info");
     showLoader(true);
-    await update.downloadAndInstall();
-    showLoader(false);
-    // Show restart prompt
-    showRestartModal();
+
+    // Show fallback link after 15 seconds
+    const fallbackTimer = setTimeout(() => {
+      fallback.innerHTML = `Download taking too long? <a href="https://github.com/Fleebee/irevive-icloud-restore/releases/latest/download/iRevive_aarch64.dmg" class="update-fallback-link">Download manually</a>`;
+      fallback.querySelector(".update-fallback-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        openUrl("https://github.com/Fleebee/irevive-icloud-restore/releases/latest/download/iRevive_aarch64.dmg");
+      });
+    }, 15000);
+
+    try {
+      await update.downloadAndInstall();
+      clearTimeout(fallbackTimer);
+      showLoader(false);
+      modal.classList.remove("active");
+      showRestartModal();
+    } catch (err) {
+      clearTimeout(fallbackTimer);
+      showLoader(false);
+      log(`Update download failed: ${err}`, "error");
+      fallback.innerHTML = `Download failed. <a href="https://github.com/Fleebee/irevive-icloud-restore/releases/latest/download/iRevive_aarch64.dmg" class="update-fallback-link">Download manually</a>`;
+      fallback.querySelector(".update-fallback-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        openUrl("https://github.com/Fleebee/irevive-icloud-restore/releases/latest/download/iRevive_aarch64.dmg");
+      });
+    }
   };
 
   document.getElementById("btn-update-ignore").onclick = () => {
