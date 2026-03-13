@@ -199,6 +199,16 @@ pub fn run() {
             click_restore,
             close_icloud_window,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == "main" {
+                    // Close the iCloud window when the main window is closed
+                    if let Some(icloud_win) = window.app_handle().get_webview_window("icloud") {
+                        let _ = icloud_win.close();
+                    }
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

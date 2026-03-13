@@ -49,7 +49,19 @@
           <input type="number" id="batch-size" class="batch-input" value="500" min="1" max="5000" step="50" />
         </div>
         <button id="btn-restore" class="btn btn-accent" disabled>Restore / Confirm</button>
+        <div class="auto-control">
+          <button id="btn-auto" class="btn btn-auto" disabled>Auto Mode</button>
+          <div class="auto-slider-wrap">
+            <input type="range" id="auto-wait-time" class="auto-slider" value="5" min="1" max="15" step="1" />
+            <span class="auto-slider-value" id="auto-slider-value">5 min</span>
+          </div>
+        </div>
       </section>
+
+      <div class="auto-timer-bar" id="auto-timer-bar">
+        <div class="auto-timer-fill" id="auto-timer-fill"></div>
+        <span class="auto-timer-label" id="auto-timer-label"></span>
+      </div>
 
       <div class="loader-bar" id="loader-bar"></div>
 
@@ -111,6 +123,14 @@
               <div>
                 <strong>Repeat</strong>
                 <p>Repeat steps 4-5 for the next batch. Keep going until all items are restored.</p>
+              </div>
+            </div>
+          </div>
+            <div class="help-step">
+              <span class="step-num">A</span>
+              <div>
+                <strong>Auto Mode</strong>
+                <p>Click "Auto Mode" to run hands-free overnight. Set the wait time (default 5 min) using the input next to the button. It will automatically select items, wait, click restore, wait, and repeat. A countdown bar shows time until the next action. Click "Stop Auto" to stop at any time.</p>
               </div>
             </div>
           </div>

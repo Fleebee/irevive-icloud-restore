@@ -311,6 +311,142 @@ body {
   color: var(--text-secondary);
 }
 
+/* ── Auto Mode Control ─────────────────────────────────── */
+
+.auto-control {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 120px;
+  gap: 0;
+  align-items: stretch;
+}
+
+.auto-control .btn-auto {
+  border-radius: var(--radius);
+  flex: 0 0 auto;
+  min-width: 100px;
+}
+
+.auto-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.auto-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.auto-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--accent-hover);
+  cursor: pointer;
+  box-shadow: 0 0 6px var(--accent-glow);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.auto-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.auto-slider::-webkit-slider-thumb:active {
+  transform: scale(1.05);
+}
+
+.auto-slider-value {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 36px;
+}
+
+/* ── Auto Mode Button ──────────────────────────────────── */
+
+.btn-auto {
+  background: transparent;
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.btn-auto:hover:not(:disabled) {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.btn-auto.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #1a1a2e;
+  font-weight: 700;
+  animation: autoPulse 2s ease-in-out infinite;
+}
+
+.btn-auto.active:hover:not(:disabled) {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  animation: none;
+}
+
+@keyframes autoPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  50% { box-shadow: 0 0 12px 4px rgba(52, 211, 153, 0.15); }
+}
+
+/* ── Auto Timer Bar ───────────────────────────────────────── */
+
+.auto-timer-bar {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: none;
+}
+
+.auto-timer-bar.active {
+  display: block;
+}
+
+.auto-timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  border-radius: 5px;
+  transition: width 0.25s linear;
+  width: 0%;
+}
+
+.auto-timer-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
 /* ── Loader Bar ─────────────────────────────────────────── */
 
 .loader-bar {
