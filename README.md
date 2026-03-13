@@ -14,6 +14,7 @@ iRevive automates the painful process of restoring thousands of files from iClou
 4. **Select Items** - Automatically checks a batch of items (configurable, default 500)
 5. **Restore / Confirm** - Clicks the Restore button, or dismisses the confirmation dialog
 6. **Repeat** - Keep going until all items are restored
+A. **Auto Mode** - For automated restore attempts at configurable intervals
 
 ## Features
 
