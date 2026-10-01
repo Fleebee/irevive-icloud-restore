@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Simulated iCloud · 模拟页面</title>
+<style>body{font-family:system-ui;background:#fff;color:#111}#rows{height:52px;overflow:auto}label{display:block}</style>
+<div role="dialog" id="dialog"></div>
+<script>
+const requestedLanguage = new URLSearchParams(parent.location.search).get('apple');
+const locale = ['en','zh-TW'].includes(requestedLanguage) ? requestedLanguage : 'zh-CN';
+const labels = locale === 'en' ? {
+  title:'Restore Files (simulated)', restore:n=>`Restore ${n} Files`, remove:n=>`Delete ${n} Files`,
+  success:n=>`${n} files were restored`, confirm:'OK', waiting:'Restoring simulated files…',
+} : locale === 'zh-TW' ? {
+  title:'恢復檔案（模擬）', restore:n=>`恢復 ${n} 個檔案`, remove:n=>`刪除 ${n} 個檔案`,
+  success:n=>`已恢復 ${n} 個檔案`, confirm:'好', waiting:'正在恢復模擬檔案…',
+} : {
+  title:'恢复文件（模拟）', restore:n=>`恢复 ${n} 个文件`, remove:n=>`删除 ${n} 个文件`,
+  success:n=>`已恢复 ${n} 个文件`, confirm:'好', waiting:'正在恢复模拟文件…',
+};
+let files = Array.from({length:150}, (_,i) => i+1);
+let selected = new Set(files.slice(0,40));
+let readyAt = Date.now()+2000;
+const dialog = document.getElementById('dialog');
+function render() {
+  dialog.innerHTML = `<h2>${labels.title}</h2><div class="file-recovery-modal-content"><p>Remaining / 剩余 ${files.length}; Selected / 已选 ${selected.size}; selected rows unmounted / 选中行移出 DOM</p><div id="rows"></div></div><footer><button id="delete" disabled>${labels.remove(selected.size)}</button><button id="restore">${labels.restore(selected.size)}</button></footer>`;
+  const rows = document.getElementById('rows');
+  for (const id of files.filter(id=>!selected.has(id))) {
+    const row=document.createElement('label');
+    const box=document.createElement('input'); box.type='checkbox';
+    box.onchange=()=>{selected.add(id);render();};
+    row.append(box, 'Simulated file '+id); rows.append(row);
+  }
+  const restore=document.getElementById('restore');
+  restore.disabled=!selected.size || Date.now()<readyAt;
+  restore.onclick=()=>{
+    if(restore.disabled) throw new Error('Disabled recovery control');
+    const batch=new Set(selected);
+    parent.fixtureStats.restoreRequests++;
+    dialog.innerHTML=`<h2>${labels.waiting}</h2>`;
+    setTimeout(()=>{
+      dialog.innerHTML=`<h2>${labels.success(batch.size)}</h2><button id="confirm">${labels.confirm}</button>`;
+      document.getElementById('confirm').onclick=()=>{
+        parent.fixtureStats.confirmations++;
+        files=files.filter(id=>!batch.has(id));selected.clear();readyAt=Date.now()+500;
+        render();setTimeout(render,550);
+      };
+    },1500);
+  };
+}
+render();setTimeout(render,2100);
+</script>

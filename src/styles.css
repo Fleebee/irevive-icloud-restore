@@ -1689,3 +1689,14 @@ body {
   border-color: var(--red) !important;
   color: var(--red) !important;
 }
+
+/* Recovery language and shared batch settings. */
+.header-right { flex-wrap: wrap; gap: 8px; }
+#language-select { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 7px; font: inherit; font-size: .8rem; }
+.batch-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: .8rem; color: var(--text-secondary); }
+.batch-settings .batch-input { border-radius: var(--radius); }
+.batch-settings > span { font-size: .75rem; color: var(--text-muted); }
+.container { overflow-y: auto; }
+.container > :not(.log-section) { flex-shrink: 0; }
+.log-section { min-height: 140px; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }

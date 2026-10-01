@@ -5,7 +5,8 @@
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>iRevive</title>
-    <script type="module" src="/main.js" defer></script>
+    <script src="i18n.js"></script>
+    <script type="module" src="main.js" defer></script>
   </head>
 
   <body>
@@ -19,9 +20,10 @@
             </h1>
           </div>
           <div class="header-right">
-          <button id="btn-help" class="btn-icon" title="How to use">Instructions</button>
-          <button id="btn-support" class="btn-icon" title="Report a problem, suggest a feature or leave feedback">Feedback</button>
-          <button id="btn-donate" class="btn-icon btn-donate-icon" title="Donate">Donate</button>
+          <select id="language-select" aria-label="Language / 语言"><option value="en">English</option><option value="zh-CN">简体中文</option></select>
+          <button id="btn-help" class="btn-icon" data-i18n="instructions" title="How to use">Instructions</button>
+          <button id="btn-support" data-i18n="feedback" class="btn-icon" title="Report a problem, suggest a feature or leave feedback">Feedback</button>
+          <button id="btn-donate" data-i18n="donate" class="btn-icon btn-donate-icon" title="Donate">Donate</button>
           <div class="status-bar">
             <span class="status-dot" id="status-dot"></span>
             <span class="status-text" id="status-text">Disconnected</span>
@@ -34,18 +36,18 @@
       <section class="counters" id="counters-normal">
         <div class="counter-card">
           <span class="counter-value" id="count-selected">0</span>
-          <span class="counter-label">Selected</span>
+          <span class="counter-label" data-i18n="selected">Selected</span>
         </div>
         <div class="counter-card">
           <span class="counter-value" id="count-restored">0</span>
-          <span class="counter-label">Restored</span>
+          <span class="counter-label" data-i18n="restored">Confirmed restored</span>
         </div>
       </section>
 
       <section class="counters counters-auto" id="counters-auto">
         <div class="counter-card counter-card-auto">
-          <span class="counter-value auto-mode-label">AUTO MODE</span>
-          <span class="counter-label">Cycle <span id="auto-cycle-count">0</span></span>
+          <span class="counter-value auto-mode-label" data-i18n="autoTab">Automatic</span>
+          <span class="counter-label"><span data-i18n="cycle">Completed cycles</span> <span id="auto-cycle-count">0</span></span>
         </div>
       </section>
 
@@ -53,9 +55,14 @@
         <button id="btn-launch" class="btn btn-primary">Open iCloud</button>
       </section>
 
+      <section class="batch-settings">
+        <label for="batch-size" data-i18n="batchSize">Files per batch</label>
+        <input type="number" id="batch-size" class="batch-input" value="500" min="1" max="5000" step="1" data-i18n-label="batchSize" />
+        <span data-i18n="batchHint"></span>
+      </section>
       <div class="tabs" role="tablist">
-        <button class="tab active" id="tab-manual" role="tab" aria-selected="true" aria-controls="panel-manual">Manual</button>
-        <button class="tab" id="tab-auto" role="tab" aria-selected="false" aria-controls="panel-auto">Auto Mode</button>
+        <button class="tab active" id="tab-manual" role="tab" aria-selected="true" aria-controls="panel-manual" data-i18n="manual">Manual</button>
+        <button class="tab" id="tab-auto" role="tab" aria-selected="false" aria-controls="panel-auto" data-i18n="autoTab">Auto Mode</button>
       </div>
 
       <!-- data-stage moves the filled highlight from Select to Restore, so the
@@ -63,21 +70,21 @@
       <section class="controls tab-panel" id="panel-manual" role="tabpanel" data-stage="select">
         <div class="batch-control">
           <button id="btn-select" class="btn" disabled><span class="step-badge">1</span>Select</button>
-          <input type="number" id="batch-size" class="batch-input" value="500" min="1" max="5000" step="50" />
+
         </div>
-        <button id="btn-restore" class="btn" disabled><span class="step-badge">2</span>Restore / Confirm</button>
-        <button id="btn-deselect" class="btn btn-quiet" disabled>Deselect all</button>
+        <button id="btn-restore" class="btn" disabled><span class="step-badge">2</span><span data-i18n="restore">Restore / Confirm</span></button>
+        <button id="btn-deselect" class="btn btn-quiet" data-i18n="deselect" disabled>Deselect all</button>
       </section>
 
       <section class="controls tab-panel" id="panel-auto" role="tabpanel" hidden>
         <div class="auto-control">
           <button id="btn-auto" class="btn btn-auto" disabled>Auto Mode</button>
           <div class="auto-slider-wrap">
-            <input type="range" id="auto-wait-time" class="auto-slider" value="5" min="1" max="15" step="1" />
-            <span class="auto-slider-value" id="auto-slider-value">5 min</span>
+            <input type="range" id="auto-wait-time" class="auto-slider" value="3" min="1" max="15" data-i18n-label="readinessTimeout" step="1" />
+            <span class="auto-slider-value" id="auto-slider-value">3 min</span>
           </div>
         </div>
-        <p class="auto-hint">Selects, waits, restores and repeats until you stop it. Wait time is how long it pauses after each step.</p>
+        <p class="auto-hint" data-i18n="autoHint"></p>
       </section>
 
       <div class="auto-timer-bar" id="auto-timer-bar">
@@ -89,8 +96,8 @@
 
       <section class="log-section">
         <div class="log-header">
-          <span>Log</span>
-          <button id="btn-clear-log" class="btn-small">Clear</button>
+          <span data-i18n="log">Log</span>
+          <button id="btn-clear-log" class="btn-small" data-i18n="clear">Clear</button>
         </div>
         <div class="log-area" id="log-area"></div>
       </section>
@@ -104,73 +111,19 @@
       </footer>
     </main>
 
-    <!-- Help Modal -->
-    <div class="modal-overlay" id="modal-help">
-      <div class="modal">
-        <div class="modal-header">
-          <h2>How to Use</h2>
-          <button class="modal-close" id="close-help">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="help-steps">
-            <div class="help-step">
-              <span class="step-num">1</span>
-              <div>
-                <strong>Open iCloud</strong>
-                <p>Click "Open iCloud" to open a window to iCloud's Data Recovery page.</p>
-              </div>
-            </div>
-            <div class="help-step">
-              <span class="step-num">2</span>
-              <div>
-                <strong>Sign In &amp; Open Restore Files</strong>
-                <p>In the browser window, sign in with your Apple ID and complete 2FA. Then click <strong>"Restore Files"</strong> to open the file list.</p>
-              </div>
-            </div>
-            <div class="help-step">
-              <span class="step-num">3</span>
-              <div>
-                <strong>Wait for Items to Load</strong>
-                <p>Let the file list start loading. You don't need to wait for all items -- a few hundred is enough to start.</p>
-              </div>
-            </div>
-            <div class="help-step">
-              <span class="step-num">4</span>
-              <div>
-                <strong>Select Items</strong>
-                <p>On the <strong>Manual</strong> tab, set your batch size (default 500) and click "1 Select". iRevive waits for the list to finish loading, then ticks that many items and tells you how many it managed. "Deselect all" clears them again.</p>
-              </div>
-            </div>
-            <div class="help-step">
-              <span class="step-num">5</span>
-              <div>
-                <strong>Restore / Confirm</strong>
-                <p>Click "2 Restore / Confirm" to press iCloud's Restore button. The highlighted step is always the one to press next, so follow the purple one. After the restore finishes, press it again to dismiss iCloud's confirmation.</p>
-              </div>
-            </div>
-            <div class="help-step">
-              <span class="step-num">6</span>
-              <div>
-                <strong>Repeat</strong>
-                <p>Repeat steps 4-5 for the next batch. Keep going until all items are restored.</p>
-              </div>
-            </div>
-          </div>
-            <div class="help-step">
-              <span class="step-num">A</span>
-              <div>
-                <strong>Auto Mode</strong>
-                <p>Open the Auto Mode tab and click "Auto Mode" to run hands-free overnight. Set the wait time (default 5 min) using the input next to the button. Each cycle waits for iCloud to finish loading, selects items, waits, clicks restore, waits again, and repeats. A countdown bar shows time until the next action. Click "Stop Auto" to stop at any time.</p>
-              </div>
-            </div>
-          </div>
-          <div class="help-tip">
-            <strong>Tip:</strong> If buttons aren't working, make sure items have loaded in the iCloud window first.
-          </div>
-        </div>
-      </div>
+  <div class="modal-overlay" id="modal-help">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="help-heading">
+      <div class="modal-header"><h2 id="help-heading" data-i18n="helpTitle"></h2><button id="close-help" class="modal-close" data-i18n-label="close">×</button></div>
+      <div class="modal-body"><div class="help-steps">
+        <div class="help-step"><span class="step-num">1</span><div><strong data-i18n="help1Title"></strong><p data-i18n="help1"></p></div></div>
+        <div class="help-step"><span class="step-num">2</span><div><strong data-i18n="help2Title"></strong><p data-i18n="help2"></p></div></div>
+        <div class="help-step"><span class="step-num">3</span><div><strong data-i18n="help3Title"></strong><p data-i18n="help3"></p></div></div>
+        <div class="help-step"><span class="step-num">4</span><div><strong data-i18n="help4Title"></strong><p data-i18n="help4"></p></div></div>
+        <div class="help-step"><span class="step-num">5</span><div><strong data-i18n="help5Title"></strong><p data-i18n="help5"></p></div></div>
+        <div class="help-step"><span class="step-num">6</span><div><strong data-i18n="help6Title"></strong><p data-i18n="help6"></p></div></div>
+      </div></div>
     </div>
-
+  </div>
     <!-- Welcome Splash -->
     <div class="modal-overlay active" id="modal-welcome">
       <div class="modal modal-welcome">
@@ -194,7 +147,7 @@
             </div>
           </div>
 
-          <button id="btn-welcome-start" class="btn btn-primary welcome-start">Get Started</button>
+          <button id="btn-welcome-start" data-i18n="getStarted" class="btn btn-primary welcome-start">Get Started</button>
 
           <div class="welcome-footer">
             <a href="https://donate.stripe.com/14A28r1Fq9yNf7agVqfbq02" target="_blank" rel="noopener noreferrer" class="donate-link welcome-donate-link">Support this project</a>
@@ -259,8 +212,8 @@
             Apple's servers are having a problem listing your deleted files, so there's nothing
             to select yet. <span id="apple-error-detail"></span>
           </p>
-          <p class="update-text" id="apple-error-auto" hidden>
-            Auto Mode will keep trying every cycle, so you can leave it running.
+          <p class="update-text" id="apple-error-auto" data-i18n="autoErrorStop" hidden>
+            Auto stops when it cannot verify a batch. Check the iCloud window before restarting.
           </p>
           <div class="apple-error-check">
             <strong>Check it isn't iRevive</strong>

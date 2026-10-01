@@ -109,17 +109,55 @@ const PAGE_HELPERS: &str = r#"
         return [];
     };
 
-    const selectedCount = () => selectedEls().length;
+    const pageText = el => (el?.textContent || "").replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, "").replace(/\s+/g, " ").trim();
+
+    const selectedCount = () => {
+        // iCloud can recycle the selected rows out of the rendered list. The
+        // recovery footer still reports the complete selected batch.
+        const button = restoreButton();
+        const text = pageText(button);
+        const match = text.match(/^(?:恢复|恢復|復原|還原|回復)\s*([\d,，]+)\s*(?:个|個)?\s*(?:文件|檔案)$/)
+            || text.match(/^(?:restore|recover)\s+([\d,]+)\s+files?$/i);
+        return match ? Number(match[1].replace(/[,，]/g, '')) : selectedEls().length;
+    };
+    const visibleButton = btn => btn.getClientRects().length > 0;
+    const buttonEnabled = btn => !btn.disabled && btn.getAttribute('aria-disabled') !== 'true';
+    const restoreButton = () => {
+        // The action footer may be a sibling of .file-recovery-modal-content,
+        // not its child. Include it while excluding background tiles/nav.
+        const buttons = Array.from(document.querySelectorAll('button, [role="button"]')).filter(btn =>
+            visibleButton(btn)
+            && /^(restore|recover|恢复|恢復|復原|還原|回復)(?:\s|\d|$)/i.test(pageText(btn))
+            && !btn.closest('.tile-article') && !btn.closest('.nav-link'));
+        return buttons.find(buttonEnabled) || buttons[0] || null;
+    };
+
+    const confirmation = () => {
+        const button = Array.from(document.querySelectorAll('button, [role="button"]'))
+            .find(btn => visibleButton(btn) && buttonEnabled(btn)
+                && /^(ok|done|got it|好|确定|完成|知道了)$/i.test(pageText(btn)));
+        if (!button) return null;
+        const scope = button.closest('[role="dialog"]') || button.closest('[class*="modal"]') || document;
+        const headings = Array.from(scope.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]'));
+        for (const heading of headings) {
+            const text = pageText(heading);
+            const match = text.match(/已(?:恢复|恢復|復原|還原|回復)\s*([\d,，]+)\s*(?:个|個)?\s*(?:文件|檔案)/)
+                || text.match(/([\d,]+)\s+files?\s+(?:were\s+|was\s+)?(?:restored|recovered)/i)
+                || text.match(/(?:restored|recovered)\s+([\d,]+)\s+files?/i);
+            if (match) return { button, restored: Number(match[1].replace(/[,，]/g, '')) };
+        }
+        return null;
+    };
 
     // Apple's "There was a problem loading all restorable files. Try Again",
     // shown when its server fails to list deleted files (HTTP 500). Returns
     // the Try Again button, or null. While the Restore Files dialog is open
     // only its own counts: the tile behind it has a Try Again of its own that
-    // can stay up after the dialog's list has loaded. English only, like the rest.
+    // can stay up after the dialog's list has loaded.
     const appleErrorRetry = () => {
         const scope = document.querySelector(".file-recovery-modal-content") || document;
         return Array.from(scope.querySelectorAll('button, [role="button"], a'))
-            .find(el => (el.textContent || "").trim().toLowerCase() === "try again") || null;
+            .find(el => /^(try again|重试|再试一次|再试)$/i.test(pageText(el))) || null;
     };
 "#;
 
@@ -141,12 +179,18 @@ async fn select_batch(
     wait_ms: Option<u64>,
     settle_ms: Option<u64>,
     max_retries: Option<u32>,
+    ready_when_count: Option<bool>,
     request_id: u64,
 ) -> Result<Value, String> {
-    let n = count.unwrap_or(500);
+    let n = count.unwrap_or(500).clamp(1, 5000);
+    if let Some(win) = app_handle.get_webview_window("icloud") {
+        win.unminimize().map_err(|e| e.to_string())?;
+        win.show().map_err(|e| e.to_string())?;
+    }
     let wait_ms = wait_ms.unwrap_or(0);
     let settle_ms = settle_ms.unwrap_or(3000);
     let max_retries = max_retries.unwrap_or(0);
+    let ready_when_count = ready_when_count.unwrap_or(false);
     let js = format!(
         r#"
         {PAGE_HELPERS}
@@ -160,6 +204,8 @@ async fn select_batch(
         let lastRetry = 0;
         let sawAppleError = false;
         while (Date.now() - started < {wait_ms}) {{
+            // A growing list need not finish loading once a batch is available.
+            if ({ready_when_count} && !appleErrorRetry() && selectedCount() + unselected().length >= limit) break;
             await delay(1000);
             if (cancelled()) break;
             const retry = appleErrorRetry();
@@ -187,13 +233,25 @@ async fn select_batch(
 
         const before = selectedCount();
         let clicked = 0;
-        for (const el of unselected().slice(0, limit)) {{
-            if (cancelled()) break;
-            if (!el.isConnected) continue;
-            el.scrollIntoView({{ block: "center" }});
-            el.click();
-            clicked++;
-            if (clicked % 10 === 0) await delay(5);
+        const attempted = new WeakSet();
+        const clickDeadline = Date.now() + 80000;
+        while (!cancelled() && !appleErrorRetry() && clicked < Math.max(0, limit - before)
+                && selectedCount() < limit && Date.now() < clickDeadline) {{
+            // Refresh references between small groups: React can replace rows.
+            const candidates = unselected().filter(el => el.isConnected && !el.disabled
+                && el.getAttribute('aria-disabled') !== 'true' && !attempted.has(el))
+                .slice(0, Math.min(5, limit - before - clicked));
+            if (!candidates.length) break;
+            for (const el of candidates) {{
+                if (cancelled()) break;
+                if (!el.isConnected || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+                attempted.add(el);
+                // DOM checkbox clicks do not require scrolling into view.
+                if (!el.matches('input[type="checkbox"], [role="checkbox"]')) el.scrollIntoView({{ block: "center" }});
+                el.click();
+                clicked++;
+            }}
+            await delay(25);
         }}
         await delay(500);
 
@@ -220,34 +278,33 @@ async fn select_batch(
 /// which it clicked and how many items were selected at that moment, which is
 /// the number actually sent to be restored.
 #[tauri::command]
-async fn click_restore(app_handle: tauri::AppHandle, request_id: u64) -> Result<Value, String> {
+async fn click_restore(
+    app_handle: tauri::AppHandle,
+    request_id: u64,
+    confirm_only: Option<bool>,
+) -> Result<Value, String> {
+    if let Some(win) = app_handle.get_webview_window("icloud") {
+        win.unminimize().map_err(|e| e.to_string())?;
+        win.show().map_err(|e| e.to_string())?;
+    }
+    let confirm_only = confirm_only.unwrap_or(false);
     let js = format!(
         r#"
         {PAGE_HELPERS}
-        const send = (action, selected) =>
-            report({{ kind: "restore", id: {request_id}, action, selected, apple_error: !!appleErrorRetry() }});
+        const send = (action, selected, restored = 0) =>
+            report({{ kind: "restore", id: {request_id}, action, selected, restored, apple_error: !!appleErrorRetry() }});
 
-        const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
-
-        // First check for a confirmation dialog (OK / Done / Got it)
-        const confirmBtn = allBtns.find(btn => {{
-            const text = (btn.textContent || "").trim().toLowerCase();
-            return text === "ok" || text === "done" || text === "got it" || text === "close";
-        }});
-        if (confirmBtn) {{
-            confirmBtn.click();
-            send("confirm", 0);
+        // Only a success heading plus its confirmation button proves recovery.
+        const success = confirmation();
+        if (success) {{
+            success.button.click();
+            send("confirm", 0, success.restored);
             return;
         }}
+        if ({confirm_only}) {{ send("pending", selectedCount()); return; }}
 
         // Otherwise look for the restore/recover button
-        const restoreBtn = allBtns.find(btn => {{
-            const text = (btn.textContent || "").toLowerCase();
-            if (!text.includes("restore") && !text.includes("recover")) return false;
-            if (btn.closest(".tile-article")) return false;
-            if (btn.closest(".nav-link")) return false;
-            return true;
-        }});
+        const restoreBtn = restoreButton();
 
         if (!restoreBtn) {{
             send("none", selectedCount());
@@ -279,7 +336,7 @@ async fn click_restore(app_handle: tauri::AppHandle, request_id: u64) -> Result<
         const selected = selectedCount();
         const disabled = restoreBtn.disabled || restoreBtn.getAttribute("aria-disabled") === "true";
         restoreBtn.scrollIntoView({{ block: "center", behavior: "instant" }});
-        restoreBtn.click();
+        if (!disabled) restoreBtn.click();
         send(disabled ? "disabled" : "restore", selected);
         "#,
     );
@@ -326,12 +383,16 @@ async fn check_icloud(app_handle: tauri::AppHandle, request_id: u64) -> Result<(
     let js = format!(
         r#"
         {PAGE_HELPERS}
+        const restore = restoreButton();
+        const selected = selectedCount();
         report({{
             kind: "status",
             id: {request_id},
             apple_error: !!appleErrorRetry(),
             loaded: unselected().length,
-            selected: selectedCount(),
+            selected,
+            restore_ready: !!restore && buttonEnabled(restore) && selected > 0,
+            confirmation_ready: !!confirmation(),
         }});
         "#,
     );

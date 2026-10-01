@@ -4,6 +4,9 @@ const { check } = window.__TAURI__["updater"];
 const { relaunch } = window.__TAURI__["process"];
 const { getVersion } = window.__TAURI__["app"];
 
+const t = (key, values) => window.IReviveI18n.t(key, values);
+let currentStatus = {state: "disconnected", key: "status.disconnected", values: {}};
+
 // ── DOM refs ────────────────────────────────────────────────
 
 const logArea = () => document.getElementById("log-area");
@@ -31,6 +34,7 @@ let totalRestored = 0;
 let autoModeActive = false;
 let autoTimerInterval = null;
 let autoTimeoutId = null;
+let autoWaitResolve = null;
 let autoCycleCount = 0;
 // Bumped on every start, so a cycle still waiting on iCloud from before a
 // Stop can tell it has been replaced and bow out.
@@ -40,10 +44,10 @@ let autoRunId = 0;
 window.__onICloudClosed = () => {
   browserLaunched = false;
   if (autoModeActive) stopAutoMode();
-  setStatus("disconnected", "Disconnected");
+  setStatus("disconnected", "status.disconnected");
   enableActionButtons(false);
   btnLaunch().disabled = false;
-  log("iCloud window closed.", "warn");
+  log(t("log.closed"), "warn");
 };
 
 // Scripts in the iCloud window report what they actually did. Each request
@@ -80,14 +84,14 @@ async function invokeWithReport(command, args, timeoutMs) {
   return result;
 }
 
-// How long Select waits for iCloud's file list to finish loading, and how long
-// the list must hold still to count as loaded. Auto Mode is stricter because it
-// selects after a restore, when the old list can still be showing before
-// iCloud reloads it.
+// Selection wait limits. Auto can proceed immediately once a batch is loaded;
+// a smaller available batch is allowed after the list has briefly settled.
 const MANUAL_LIST_WAIT_MS = 30 * 1000;
 const MANUAL_SETTLE_MS = 3 * 1000;
 const AUTO_LIST_WAIT_MS = 3 * 60 * 1000;
-const AUTO_SETTLE_MS = 20 * 1000;
+const AUTO_SETTLE_MS = 3 * 1000;
+const AUTO_POLL_MS = 3 * 1000;
+const AUTO_CONFIRM_TIMEOUT_MS = 10 * 60 * 1000;
 // Times Select clicks Apple's Try Again when the file list fails to load.
 const MANUAL_RETRIES = 1;
 const AUTO_RETRIES = 3;
@@ -96,10 +100,10 @@ const SELECT_CLICK_MS = 90 * 1000;
 const RESTORE_REPORT_MS = 10 * 1000;
 
 /** Selects a batch. Resolves with the report, or null if none came back. */
-function selectInICloud(count, waitMs, settleMs, maxRetries) {
+function selectInICloud(count, waitMs, settleMs, maxRetries, readyWhenCount = false) {
   return invokeWithReport(
     "select_batch",
-    { count, waitMs, settleMs, maxRetries },
+    { count, waitMs, settleMs, maxRetries, readyWhenCount },
     waitMs + SELECT_CLICK_MS,
   );
 }
@@ -108,65 +112,71 @@ function selectInICloud(count, waitMs, settleMs, maxRetries) {
 function logSelection(report, count, prefix = "") {
   if (report?.cancelled) {
     setSelected(report.total_selected, false);
-    log(`${prefix}Stopped. ${report.selected} items were selected before you cancelled.`, "warn");
+    log(`${prefix}${t("log.selectionCancelled", {count: report.selected})}`, "warn");
     return;
   }
   if (!report) {
-    log(`${prefix}Selection sent, but iRevive couldn't read how many were ticked. Check the iCloud window.`, "warn");
+    log(`${prefix}${t("log.selectionUnknown")}`, "warn");
     return;
   }
   setSelected(report.total_selected, false);
   if (report.retries > 0) {
-    log(`${prefix}iCloud failed to load the file list. Clicked Try Again ${report.retries === 1 ? "once" : `${report.retries} times`}.`, "warn");
+    log(`${prefix}${t("log.retried", {count: report.retries})}`, "warn");
   }
   if (report.apple_error) {
-    log(`${prefix}Apple's servers still can't load your deleted files, so nothing was selected.`, "error");
+    log(`${prefix}${t("log.appleError")}`, "error");
     showAppleError();
     return;
   }
   appleErrorShown = false;
-  if (report.selected === 0) {
-    log(`${prefix}Nothing new was selected. iCloud may still be loading, or there's nothing left to restore.`, "warn");
+  if (report.total_selected > report.selected) {
+    log(`${prefix}${t("log.selectedExisting", {count: report.selected, total: report.total_selected})}`, "success");
+  } else if (report.selected === 0) {
+    log(`${prefix}${t("log.selectedNone")}`, "warn");
   } else if (report.selected < count) {
-    log(`${prefix}Selected ${report.selected} of ${count}. That's all iCloud had loaded.`, "warn");
+    log(`${prefix}${t("log.selectedPartial", {count: report.selected, limit: count})}`, "warn");
   } else {
-    log(`${prefix}Selected ${report.selected} items.`, "success");
+    log(`${prefix}${t("log.selected", {count: report.selected})}`, "success");
   }
 }
 
 /** Clicks Restore (or OK) and adds what was actually restored to the total. */
-async function restoreInICloud(prefix = "") {
-  const report = await invokeWithReport("click_restore", {}, RESTORE_REPORT_MS);
+async function restoreInICloud(prefix = "", confirmOnly = false) {
+  const report = await invokeWithReport("click_restore", { confirmOnly }, RESTORE_REPORT_MS);
   if (!report) {
-    log(`${prefix}Restore clicked, but iRevive couldn't read how many items were in it, so the total wasn't changed.`, "warn");
-    return;
+    log(`${prefix}${t("log.restoreUnknown")}`, "warn");
+    return null;
   }
   if (report.apple_error && report.action !== "restore") {
-    log(`${prefix}Apple's servers can't load your deleted files right now, so there was nothing to restore.`, "error");
+    log(`${prefix}${t("log.appleError")}`, "error");
     showAppleError();
-    return;
+    return report;
   }
   switch (report.action) {
     case "restore":
       if (report.selected > 0) {
-        totalRestored += report.selected;
         setSelected(0, true);
-        updateCounters(null, totalRestored);
-        log(`${prefix}Restore clicked for ${report.selected} items. Total: ${totalRestored}`, "success");
+        log(`${prefix}${t("log.restoreRequested", {count: report.selected})}`, "info");
       } else {
-        log(`${prefix}Restore clicked, but no items were selected.`, "warn");
+        log(`${prefix}${t("log.restoreEmpty")}`, "warn");
       }
       break;
     case "confirm":
+      totalRestored += report.restored || 0;
+      updateCounters(null, totalRestored);
       setSelected(0, false);
-      log(`${prefix}Confirmation closed.`, "success");
+      log(`${prefix}${t("log.confirmed", {count: report.restored || 0, total: totalRestored})}`, "success");
+      break;
+    case "pending":
+      log(`${prefix}${t("log.confirmPending")}`, "info");
       break;
     case "disabled":
-      log(`${prefix}The Restore button was greyed out, so nothing was restored.`, "warn");
+      log(`${prefix}${t("log.restoreDisabled")}`, "warn");
       break;
     default:
-      log(`${prefix}Couldn't find a Restore or OK button in the iCloud window.`, "warn");
+      log(`${prefix}${t("log.restoreMissing")}`, "warn");
   }
+  return report;
 }
 
 
@@ -199,14 +209,15 @@ function escapeHtml(text) {
 
 // ── Status ──────────────────────────────────────────────────
 
-function setStatus(state, text) {
+function setStatus(state, key, values = {}) {
+  currentStatus = {state, key, values};
   const dot = statusDot();
   const label = statusText();
   dot.className = "status-dot";
   if (state === "connected" || state === "working") {
     dot.classList.add(state);
   }
-  label.textContent = text;
+  label.textContent = t(key, values);
 }
 
 function updateCounters(selected, restored) {
@@ -241,16 +252,16 @@ function setSelected(count, confirmPending = awaitingConfirm) {
 async function deselectAll() {
   icloudBusy = true;
   try {
-    log("Clearing the selection...");
+    log(t("log.deselecting"));
     const report = await invokeWithReport("deselect_all", {}, 60 * 1000);
     if (!report) {
-      log("Sent, but iRevive couldn't read how many were cleared. Check the iCloud window.", "warn");
+      log(t("log.deselectUnknown"), "warn");
       return;
     }
     setSelected(report.still_selected, false);
-    log(`Deselected ${report.cleared} items.`, "success");
+    log(t("log.deselected", {count: report.cleared}), "success");
   } catch (err) {
-    log(`Deselect failed: ${err}`, "error");
+    log(t("log.deselectFailed", {error: err}), "error");
   } finally {
     icloudBusy = false;
   }
@@ -280,25 +291,23 @@ function showLoader(on) {
 // ── Actions ─────────────────────────────────────────────────
 
 async function launchBrowser() {
-  if (browserLaunched) {
-    log("Browser already launched.", "warn");
-    return;
-  }
   try {
-    setStatus("working", "Launching...");
+    setStatus("working", "status.launching");
     showLoader(true);
     btnLaunch().disabled = true;
-    log("Opening iCloud window...");
+    log(t("log.opening"));
     const result = await invoke("open_icloud_window");
     browserLaunched = true;
-    setStatus("connected", "Connected");
-    enableActionButtons(true);
-    log(result?.status || "iCloud window opened.", "success");
+    btnLaunch().textContent = t("showICloud");
+    setStatus("connected", "status.connected");
+    if (!autoModeActive) enableActionButtons(true);
+    log(t("log.opened"), "success");
   } catch (err) {
-    setStatus("disconnected", "Disconnected");
+    setStatus("disconnected", "status.disconnected");
     btnLaunch().disabled = false;
-    log(`Failed to open iCloud window: ${err}`, "error");
+    log(t("log.openFailed", {error: err}), "error");
   } finally {
+    btnLaunch().disabled = false;
     showLoader(false);
   }
 }
@@ -310,20 +319,21 @@ async function selectBatch() {
     cancelICloud();
     return;
   }
-  const count = parseInt(document.getElementById("batch-size").value) || 500;
+  const count = getBatchSize();
+  if (count === null) return;
   icloudBusy = true;
   try {
-    setStatus("working", `Selecting ${count}...`);
+    setStatus("working", "status.selecting", {count});
     showLoader(true);
     enableActionButtons(false);
     setSelectAsCancel(true);
-    log(`Selecting up to ${count} items...`);
+    log(t("log.selecting", {count}));
     logSelection(await selectInICloud(count, MANUAL_LIST_WAIT_MS, MANUAL_SETTLE_MS, MANUAL_RETRIES), count);
   } catch (err) {
-    log(`Selection failed: ${err}`, "error");
+    log(t("log.selectionFailed", {error: err}), "error");
   } finally {
     icloudBusy = false;
-    setStatus("connected", "Connected");
+    setStatus("connected", "status.connected");
     showLoader(false);
     enableActionButtons(true);
     setSelectAsCancel(false);
@@ -333,8 +343,8 @@ async function selectBatch() {
 function setSelectAsCancel(cancelling) {
   const btn = btnSelect();
   btn.innerHTML = cancelling
-    ? "Cancel"
-    : '<span class="step-badge">1</span>Select';
+    ? t("cancel")
+    : `<span class="step-badge">1</span>${escapeHtml(t("select"))}`;
   btn.disabled = false;
   btn.classList.toggle("btn-cancelling", cancelling);
 }
@@ -343,24 +353,24 @@ function setSelectAsCancel(cancelling) {
 async function cancelICloud() {
   const btn = btnSelect();
   if (btn.classList.contains("btn-cancelling")) {
-    btn.textContent = "Stopping...";
+    btn.textContent = t("stopping");
     btn.disabled = true;
   }
   try {
     await invoke("cancel_icloud");
-    log("Stopping...", "warn");
+    log(t("stopping"), "warn");
   } catch (err) {
-    log(`Couldn't stop that: ${err}`, "error");
+    log(t("log.stopFailed", {error: err}), "error");
   }
 }
 
 async function clickRestore() {
   icloudBusy = true;
   try {
-    log("Clicking restore/confirm...");
+    log(t("log.clickRestore"));
     await restoreInICloud();
   } catch (err) {
-    log(`Restore failed: ${err}`, "error");
+    log(t("log.restoreFailed", {error: err}), "error");
   } finally {
     icloudBusy = false;
   }
@@ -368,13 +378,22 @@ async function clickRestore() {
 
 // ── Auto Mode ──────────────────────────────────────────────
 
+function getBatchSize() {
+  const count = Number(document.getElementById("batch-size").value);
+  if (!Number.isInteger(count) || count < 1 || count > 5000) {
+    log(t("error.batchSize"), "error");
+    return null;
+  }
+  return count;
+}
+
 function getAutoWaitMs() {
   const mins = parseInt(document.getElementById("auto-wait-time").value) || 5;
   return mins * 60 * 1000;
 }
 
 function showAutoCounters(show) {
-  document.getElementById("counters-normal").classList.toggle("hidden", show);
+  // Keep actual selection and confirmed totals visible during Auto.
   document.getElementById("counters-auto").classList.toggle("active", show);
 }
 
@@ -383,18 +402,18 @@ function updateAutoCycleCount() {
 }
 
 function startAutoMode() {
+  if (getBatchSize() === null) return;
   autoModeActive = true;
   autoCycleCount = 0;
   autoRunId++;
   showAutoCounters(true);
   updateAutoCycleCount();
-  btnAuto().textContent = "Stop Auto";
+  btnAuto().textContent = t("stopAuto");
   btnAuto().classList.add("active");
   btnSelect().disabled = true;
   btnRestore().disabled = true;
   btnDeselect().disabled = true;
-  const waitMins = (getAutoWaitMs() / 60000);
-  log(`Auto mode started. Will cycle: Wait for iCloud to load → Select → Wait ${waitMins}m → Restore → Wait ${waitMins}m → Repeat`, "info");
+  log(t("log.autoStarted", {minutes: getAutoWaitMs() / 60000}), "info");
   runAutoCycle();
 }
 
@@ -405,9 +424,12 @@ function stopAutoMode() {
   clearTimeout(autoTimeoutId);
   autoTimerInterval = null;
   autoTimeoutId = null;
+  const resolveWait = autoWaitResolve;
+  autoWaitResolve = null;
+  resolveWait?.();
   hideAutoTimer();
   showAutoCounters(false);
-  btnAuto().textContent = "Auto Mode";
+  btnAuto().textContent = t("startAuto");
   btnAuto().classList.remove("active");
   if (browserLaunched) {
     btnSelect().disabled = false;
@@ -415,8 +437,8 @@ function stopAutoMode() {
     btnDeselect().disabled = selectedNow === 0;
   }
   showLoader(false);
-  setStatus("connected", "Connected");
-  log(`Auto mode stopped. Completed ${autoCycleCount} full cycles.`, "warn");
+  setStatus("connected", "status.connected");
+  log(t("log.autoStopped", {count: autoCycleCount}), "warn");
 }
 
 function toggleAutoMode() {
@@ -427,23 +449,67 @@ function toggleAutoMode() {
   }
 }
 
+/** Read-only polling; timeout never causes a speculative Restore click. */
+async function waitForICloud(predicate, timeoutMs, label, active) {
+  const deadline = Date.now() + timeoutMs;
+  while (active()) {
+    const status = await invokeWithReport("check_icloud", {}, RESTORE_REPORT_MS);
+    if (!active()) return null;
+    if (!status) throw new Error(t("error.statusTimeout"));
+    if (status.apple_error) throw new Error(t("error.appleLoading"));
+    if (predicate(status)) return status;
+    if (Date.now() >= deadline) throw new Error(t("error.waitTimeout", {phase: label}));
+    await autoWait(t("auto.poll", {phase: label}), Math.min(AUTO_POLL_MS, deadline - Date.now()));
+  }
+  return null;
+}
+
+async function confirmAutoRestore(prefix, active) {
+  setStatus("working", "status.autoConfirm");
+  const status = await waitForICloud(s => s.confirmation_ready, AUTO_CONFIRM_TIMEOUT_MS,
+    t("auto.confirm"), active);
+  if (!status || !active()) return null;
+  const result = await restoreInICloud(prefix, true);
+  if (!active()) return null;
+  if (result?.action !== "confirm") throw new Error(t("error.confirmation"));
+  return result;
+}
+
 async function runAutoCycle(run = autoRunId) {
   const active = () => autoModeActive && run === autoRunId;
   if (!active() || !browserLaunched) return;
 
   // Step 1: Wait for iCloud to finish loading, then select
-  const count = parseInt(document.getElementById("batch-size").value) || 500;
-  const prefix = "[Auto] ";
+  const count = getBatchSize();
+  if (count === null) { stopAutoMode(); return; }
+  const prefix = t("auto.prefix");
   try {
-    setStatus("working", `Auto: Selecting ${count}...`);
+    const status = await invokeWithReport("check_icloud", {}, RESTORE_REPORT_MS);
+    if (!active()) return;
+    if (!status || status.apple_error) {
+      log(`${prefix}${t("log.pageUnknown")}`, "error");
+      stopAutoMode();
+      return;
+    }
+    // Finish a manually requested restore before touching the next batch.
+    if (status.confirmation_ready || awaitingConfirm) await confirmAutoRestore(prefix, active);
+    if (!active()) return;
+    setStatus("working", "status.autoSelecting", {count});
     showLoader(true);
-    log(`${prefix}Cycle ${autoCycleCount + 1}: Waiting for iCloud to load, then selecting ${count} items...`);
+    log(`${prefix}${t("log.cycle", {cycle: autoCycleCount + 1, count})}`);
     showListWaitTimer();
-    const report = await selectInICloud(count, AUTO_LIST_WAIT_MS, AUTO_SETTLE_MS, AUTO_RETRIES);
+    const report = await selectInICloud(count, AUTO_LIST_WAIT_MS, AUTO_SETTLE_MS, AUTO_RETRIES, true);
     if (!active()) return;
     logSelection(report, count, prefix);
+    if (!report || report.cancelled || report.apple_error || report.total_selected === 0) {
+      log(`${prefix}${t("log.noBatch")}`, "warn");
+      stopAutoMode();
+      return;
+    }
   } catch (err) {
-    log(`${prefix}Selection failed: ${err}`, "error");
+    log(`${prefix}${t("log.selectionFailed", {error: err})}`, "error");
+    stopAutoMode();
+    return;
   } finally {
     if (active()) {
       stopListWaitTimer();
@@ -453,21 +519,32 @@ async function runAutoCycle(run = autoRunId) {
 
   if (!active()) return;
 
-  // Step 2: Give iCloud time to register the selection
-  log(`${prefix}Waiting ${(getAutoWaitMs() / 60000)} minutes for selection to settle...`);
-  setStatus("connected", "Auto: Waiting (select)");
-  await autoWait("Selecting... Restore in");
-
-  if (!active()) return;
-
-  // Step 3: Click restore
+  // Restore as soon as the page permits it, then wait for actual success.
   try {
-    setStatus("working", "Auto: Restoring...");
+    setStatus("working", "status.autoReady");
     showLoader(true);
-    log(`${prefix}Clicking restore/confirm...`);
-    await restoreInICloud(prefix);
+    log(`${prefix}${t("log.polling", {seconds: AUTO_POLL_MS / 1000})}`);
+    const deadline = Date.now() + getAutoWaitMs();
+    let result;
+    do {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error(t("error.readyTimeout"));
+      const ready = await waitForICloud(s => s.restore_ready || s.confirmation_ready, remaining,
+        t("auto.ready"), active);
+      if (!ready || !active()) return;
+      result = await restoreInICloud(prefix, ready.confirmation_ready);
+      if (!active()) return;
+      // Page state may change between the check and click. Disabled means no
+      // request was sent, so checking again is safe. Never repeat after Restore.
+      if (result?.action === "disabled") await autoWait(t("auto.retry"), AUTO_POLL_MS);
+    } while (active() && result?.action === "disabled");
+    if (!active()) return;
+    if (result?.action === "restore") await confirmAutoRestore(prefix, active);
+    else if (result?.action !== "confirm") throw new Error(t("error.startRestore"));
   } catch (err) {
-    log(`${prefix}Restore failed: ${err}`, "error");
+    log(`${prefix}${t("log.restoreFailed", {error: err})}`, "error");
+    stopAutoMode();
+    return;
   }
   showLoader(false);
 
@@ -475,11 +552,12 @@ async function runAutoCycle(run = autoRunId) {
 
   autoCycleCount++;
   updateAutoCycleCount();
+  if (!active()) return;
 
-  // Step 4: Wait before next cycle
-  log(`${prefix}Waiting ${(getAutoWaitMs() / 60000)} minutes before next cycle...`);
-  setStatus("connected", "Auto: Waiting (restore)");
-  await autoWait("Restoring... Next select in");
+  // Confirmation closes the old batch. The next selection waits for fresh
+  // files if necessary, so there is no additional fixed cooldown.
+  log(`${prefix}${t("log.nextBatch")}`, "success");
+  await autoWait(t("auto.next"), 1000);
 
   if (!active()) return;
 
@@ -499,7 +577,7 @@ function showListWaitTimer() {
     const secs = Math.floor((elapsed % 60000) / 1000);
     updateAutoTimer(
       Math.min(1, elapsed / AUTO_LIST_WAIT_MS),
-      `Waiting for iCloud to load... ${mins}:${secs.toString().padStart(2, "0")}`,
+      `${t("auto.loading")} ${mins}:${secs.toString().padStart(2, "0")}`,
     );
   }, 250);
 }
@@ -510,10 +588,23 @@ function stopListWaitTimer() {
   hideAutoTimer();
 }
 
-function autoWait(label) {
+function autoWait(label, durationMs = AUTO_POLL_MS) {
   return new Promise((resolve) => {
     const startTime = Date.now();
-    const endTime = startTime + getAutoWaitMs();
+    const endTime = startTime + durationMs;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(autoTimerInterval);
+      clearTimeout(autoTimeoutId);
+      autoTimerInterval = null;
+      autoTimeoutId = null;
+      autoWaitResolve = null;
+      hideAutoTimer();
+      resolve();
+    };
+    autoWaitResolve = finish;
 
     showAutoTimer();
 
@@ -521,7 +612,7 @@ function autoWait(label) {
       const now = Date.now();
       const remaining = Math.max(0, endTime - now);
       const elapsed = now - startTime;
-      const progress = Math.min(1, elapsed / getAutoWaitMs());
+      const progress = Math.min(1, elapsed / durationMs);
 
       const mins = Math.floor(remaining / 60000);
       const secs = Math.floor((remaining % 60000) / 1000);
@@ -530,19 +621,11 @@ function autoWait(label) {
       updateAutoTimer(progress, `${label} ${timeStr}`);
 
       if (remaining <= 0) {
-        clearInterval(autoTimerInterval);
-        autoTimerInterval = null;
-        hideAutoTimer();
-        resolve();
+        finish();
       }
     }, 250);
 
-    autoTimeoutId = setTimeout(() => {
-      clearInterval(autoTimerInterval);
-      autoTimerInterval = null;
-      hideAutoTimer();
-      resolve();
-    }, getAutoWaitMs());
+    autoTimeoutId = setTimeout(finish, durationMs);
   });
 }
 
@@ -561,9 +644,26 @@ function updateAutoTimer(progress, label) {
   document.getElementById("auto-timer-label").textContent = label;
 }
 
-// ── Init ────────────────────────────────────────────────────
+// ── Interface language ──────────────────────────────────────
+
+function refreshInterfaceLanguage() {
+  window.IReviveI18n.apply(document);
+  document.getElementById("language-select").value = window.IReviveI18n.getLanguage();
+  btnLaunch().textContent = t(browserLaunched ? "showICloud" : "openICloud");
+  btnAuto().textContent = t(autoModeActive ? "stopAuto" : "startAuto");
+  const selecting = btnSelect().classList.contains("btn-cancelling");
+  btnSelect().innerHTML = selecting ? t("cancel")
+    : `<span class="step-badge">1</span><span>${escapeHtml(t("select"))}</span>`;
+  document.getElementById("auto-slider-value").textContent = t("minutes", {count: document.getElementById("auto-wait-time").value});
+  setStatus(currentStatus.state, currentStatus.key, currentStatus.values);
+}
 
 window.addEventListener("DOMContentLoaded", () => {
+  refreshInterfaceLanguage();
+  document.getElementById("language-select").addEventListener("change", event => {
+    window.IReviveI18n.setLanguage(event.target.value);
+    refreshInterfaceLanguage();
+  });
   btnLaunch().addEventListener("click", launchBrowser);
   btnSelect().addEventListener("click", selectBatch);
   btnRestore().addEventListener("click", clickRestore);
@@ -645,7 +745,7 @@ document.getElementById("close-help").addEventListener("click", () => {
   const autoSlider = document.getElementById("auto-wait-time");
   const autoSliderValue = document.getElementById("auto-slider-value");
   autoSlider.addEventListener("input", () => {
-    autoSliderValue.textContent = `${autoSlider.value} min`;
+    autoSliderValue.textContent = t("minutes", {count: autoSlider.value});
   });
 
   // Escape closes the topmost open modal.
@@ -657,11 +757,11 @@ document.getElementById("close-help").addEventListener("click", () => {
     else if (open.id !== "modal-welcome") open.classList.remove("active");
   });
 
-  setStatus("disconnected", "Disconnected");
+  setStatus("disconnected", "status.disconnected");
   getVersion().then(v => {
     document.getElementById("app-version").textContent = `v${v}`;
   });
-  log("iRevive ready.", "info");
+  log(t("log.ready"), "info");
 
   // Check for updates silently
   checkForUpdates();
@@ -704,7 +804,7 @@ async function checkICloudIdle() {
   // Something may have started while this was waiting; its own report wins.
   if (!report || icloudBusy || autoModeActive) return;
   if (report.apple_error) {
-    if (!appleErrorShown) log("Apple's servers can't load your deleted files right now.", "error");
+    if (!appleErrorShown) log(t("log.appleError"), "error");
     showAppleError(false);
   } else if (report.loaded > 0) {
     appleErrorShown = false;

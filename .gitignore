@@ -34,3 +34,6 @@ javelin-manifest-*.json
 
 # Internal docs, not for the public repo
 docs/
+
+# Isolated recovery demo output
+artifacts/
